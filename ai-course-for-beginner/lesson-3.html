@@ -1,0 +1,2875 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lesson 3 · 高级提示词和提示工程</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;0,600;0,700;0,800;0,900;1,400;1,700&family=Source+Serif+4:ital,opsz,wght@0,8..60,300;0,8..60,400;0,8..60,500;0,8..60,600;1,8..60,400&family=IBM+Plex+Mono:wght@300;400;500;600&family=Noto+Serif+SC:wght@300;400;500;600;700;900&family=Noto+Sans+SC:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+<style>
+  :root{
+    /* ============ 主题色(默认:🖋 墨水经典) ============
+       切换主题:从 references/themes.md 复制对应的 :root 块
+       整体替换这几行(--ink / --ink-rgb / --paper / --paper-rgb)
+       其他地方散落的 rgba() 都走 var(--ink-rgb) / var(--paper-rgb),无需逐处改 */
+    --ink:#0a0a0b;
+    --ink-rgb:10,10,11;
+    --paper:#f1efea;
+    --paper-rgb:241,239,234;
+    --paper-tint:#e8e5de;
+    --ink-tint:#18181a;
+
+    /* ============ 字体(跨主题固定) ============ */
+    --mono:"IBM Plex Mono",ui-monospace,monospace;
+    --serif-en:"Playfair Display","Source Serif 4",Georgia,serif;
+    --serif-body-en:"Source Serif 4",Georgia,serif;
+    --serif-zh:"Noto Serif SC",source-han-serif-sc,serif;
+    --sans-zh:"Noto Sans SC",source-han-sans-sc,sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{width:100%;height:100%;overflow:hidden;background:var(--ink);color:var(--paper);font-family:var(--sans-zh);-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility}
+
+  /* ============ WebGL 双背景 ============ */
+  canvas.bg{position:fixed;inset:0;width:100vw;height:100vh;z-index:0;display:block;transition:opacity 1.2s ease}
+  canvas#bg-light{opacity:0}
+  canvas#bg-dark{opacity:1}
+  body.light-bg canvas#bg-light{opacity:1}
+  body.light-bg canvas#bg-dark{opacity:0}
+
+  /* ============ Deck 容器 + 翻页 ============ */
+  /* width: NSLIDES * 100vw，会在 JS 里动态矫正 */
+  #deck{position:fixed;inset:0;width:10000vw;height:100vh;display:flex;flex-wrap:nowrap;transition:transform .9s cubic-bezier(.77,0,.175,1);z-index:10;will-change:transform}
+  .slide{width:100vw;height:100vh;flex:0 0 100vw;position:relative;padding:6vh 6vw 10vh 6vw;display:flex;flex-direction:column;overflow:hidden}
+  .slide.light{color:var(--ink);background:var(--paper)}
+  .slide.dark{color:var(--paper);background:var(--ink)}
+
+  /* 默认页：遮罩较厚，保证文字可读 */
+  .slide::before{content:"";position:absolute;inset:0;z-index:-1;pointer-events:none;transition:background .7s ease}
+  .slide.light::before{background:rgba(var(--paper-rgb),.78);backdrop-filter:blur(3px)}
+  .slide.dark::before{background:rgba(var(--ink-rgb),.78);backdrop-filter:blur(3px)}
+  /* Hero 页：遮罩大幅降低，让 WebGL 背景明显透出 */
+  .slide.hero.light::before{background:rgba(var(--paper-rgb),.16);backdrop-filter:none}
+  .slide.hero.dark::before{background:rgba(var(--ink-rgb),.12);backdrop-filter:none}
+  /* Hero 页顶底微弱渐隐，保证 chrome/foot 区域可读 */
+  .slide.hero::after{content:"";position:absolute;inset:0;z-index:-1;pointer-events:none}
+  .slide.hero.light::after{background:linear-gradient(180deg,rgba(var(--paper-rgb),.28) 0%,rgba(var(--paper-rgb),0) 14%,rgba(var(--paper-rgb),0) 86%,rgba(var(--paper-rgb),.28) 100%)}
+  .slide.hero.dark::after{background:linear-gradient(180deg,rgba(var(--ink-rgb),.32) 0%,rgba(var(--ink-rgb),0) 14%,rgba(var(--ink-rgb),0) 86%,rgba(var(--ink-rgb),.32) 100%)}
+
+  /* ============ Magazine chrome：顶部 meta + 底部 foot ============ */
+  .chrome{display:flex;justify-content:space-between;align-items:flex-start;font-family:var(--mono);font-size:12px;letter-spacing:.18em;text-transform:uppercase;opacity:.7}
+  .chrome .left,.chrome .right{display:flex;gap:2.4em;align-items:center}
+  .chrome .sep{width:40px;height:1px;background:currentColor;opacity:.4}
+  .foot{margin-top:auto;display:flex;justify-content:space-between;align-items:flex-end;font-family:var(--mono);font-size:12px;letter-spacing:.14em;text-transform:uppercase;opacity:.55}
+  .foot .title{font-family:var(--serif-zh);font-weight:400;letter-spacing:.05em;text-transform:none;opacity:.75;font-size:13px}
+
+  .tag{display:inline-block;font-family:var(--mono);font-size:11px;letter-spacing:.24em;text-transform:uppercase;padding:6px 14px;border:1px solid currentColor;opacity:.85}
+  .rule{width:100%;height:1px;background:currentColor;opacity:.25;margin:3vh 0}
+  .rule.v{width:1px;height:100%;margin:0}
+
+  /* ============ 字体规则 ============
+     · 衬线（Noto Serif SC / Playfair）：大标题、重点金句、数字
+     · 非衬线（Noto Sans SC）：正文描述、body、补充说明
+     · 等宽（IBM Plex Mono）：kicker、meta 小标签、foot 右侧
+  */
+  .kicker{font-family:var(--mono);font-size:12px;letter-spacing:.3em;text-transform:uppercase;opacity:.6;margin-bottom:2.6vh}
+  .display{font-family:var(--serif-en);font-weight:700;font-size:11vw;line-height:.92;letter-spacing:-.025em}
+  .display-zh{font-family:var(--serif-zh);font-weight:700;font-size:7.8vw;line-height:1.04;letter-spacing:-.005em}
+  .h1-zh{font-family:var(--serif-zh);font-weight:700;font-size:4.6vw;line-height:1.12;letter-spacing:-.005em}
+  .h2-zh{font-family:var(--serif-zh);font-weight:600;font-size:3.2vw;line-height:1.2;letter-spacing:0}
+  .h3-zh{font-family:var(--serif-zh);font-weight:500;font-size:1.9vw;line-height:1.35}
+  .body-zh{font-family:var(--sans-zh);font-weight:400;font-size:max(15px,1.22vw);line-height:1.75;opacity:.82;letter-spacing:.01em}
+  .body-serif{font-family:var(--serif-zh);font-weight:400;font-size:max(15px,1.3vw);line-height:1.65;opacity:.88}
+  .lead{font-family:var(--serif-zh);font-weight:400;font-size:1.9vw;line-height:1.4;opacity:.85}
+  .meta{font-family:var(--mono);font-size:max(11px,.88vw);letter-spacing:.16em;text-transform:uppercase;opacity:.6}
+  .big-num{font-family:var(--serif-en);font-weight:800;font-size:10vw;line-height:.85;letter-spacing:-.03em;font-feature-settings:"tnum"}
+  .mid-num{font-family:var(--serif-en);font-weight:700;font-size:5.5vw;line-height:.88;letter-spacing:-.02em;font-feature-settings:"tnum"}
+  .ghost{font-family:var(--serif-en);font-weight:900;font-size:34vw;line-height:.8;opacity:.06;letter-spacing:-.04em;position:absolute;font-feature-settings:"tnum"}
+  em{font-style:italic;font-family:var(--serif-en)}
+  .en{font-family:var(--serif-en);font-style:italic;font-weight:500}
+
+  /* ============ 布局工具 ============ */
+  .col{display:flex;flex-direction:column;gap:2.4vh}
+  .row{display:flex;align-items:center;gap:3vw}
+  .grid-6{display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(2,1fr);gap:4vw 6vw;flex:1;align-content:center;padding:2vh 0}
+  .grid-9{display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(3,1fr);gap:3vh 4vw;flex:1;align-content:center}
+  .grid-4{display:grid;grid-template-columns:repeat(2,1fr);grid-template-rows:repeat(2,1fr);gap:4vh 6vw;flex:1;align-content:center}
+  .grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:4vw;flex:1;align-content:center}
+  .split{display:grid;grid-template-columns:1fr 1fr;gap:4vw;flex:1;align-items:center}
+  .split-55{display:grid;grid-template-columns:55fr 45fr;gap:5vw;flex:1;align-items:stretch}
+  .fill{flex:1}
+  .center{align-items:center;justify-content:center;text-align:center}
+  .bottom-left{position:absolute;left:6vw;bottom:9vh;max-width:50vw}
+  .bottom-right{position:absolute;right:6vw;bottom:9vh;max-width:50vw;text-align:right}
+  .top-right{position:absolute;right:6vw;top:6vh;text-align:right}
+
+  /* ============ Stat（数字矩阵） ============ */
+  .stat{display:flex;flex-direction:column;gap:1vh;align-items:flex-start}
+  .stat .n{font-family:var(--serif-en);font-weight:800;font-size:8vw;line-height:.88;letter-spacing:-.03em;font-feature-settings:"tnum"}
+  .stat .l{font-family:var(--sans-zh);font-size:max(13px,1.05vw);opacity:.7;margin-top:1vh;font-weight:400;line-height:1.5}
+  .stat .m{font-family:var(--mono);font-size:10px;letter-spacing:.22em;text-transform:uppercase;opacity:.5;margin-bottom:.2vh}
+
+  /* ============ Callout（引用框） ============ */
+  .callout{padding:3vh 2.4vw;border-left:3px solid currentColor;position:relative;font-family:var(--serif-zh);font-size:max(15px,1.2vw);line-height:1.55;opacity:.92}
+  .slide.light .callout{background:rgba(var(--ink-rgb),.05)}
+  .slide.dark .callout{background:rgba(var(--paper-rgb),.06)}
+  .callout .cite{display:block;margin-top:1.6vh;font-family:var(--mono);font-size:11px;letter-spacing:.2em;text-transform:uppercase;opacity:.6}
+  .callout .q-big{font-family:var(--serif-zh);font-weight:600;font-size:max(17px,1.6vw);line-height:1.42}
+
+
+  /* P3 prompt comparison pages */
+  .prompt-frame{padding-top:4.4vh}
+  .prompt-frame .h-xl{font-size:3.25vw!important}
+  .prompt-grid{margin-top:3vh!important;align-items:stretch!important;gap:2.2vw!important}
+  .prompt-col{gap:.85vh!important;min-height:0}
+  .prompt-card{padding:1.25vh 1vw!important;border-left-width:2px!important}
+  .prompt-card .meta{margin-bottom:.55vh!important}
+  .prompt-pre{margin:0;white-space:pre-wrap;font-family:var(--mono);font-size:.68vw;line-height:1.42;letter-spacing:.01em;opacity:.95}
+  .prompt-pre.correct{max-height:56vh;overflow:auto}
+
+  /* ============ Platform（平台卡） ============ */
+  .plat{display:flex;flex-direction:column;justify-content:flex-end;padding:2vh 0;border-top:1px solid currentColor;border-color:rgba(127,127,127,.35)}
+  .plat .name{font-family:var(--serif-zh);font-weight:700;font-size:1.8vw;margin-bottom:.6vh}
+  .plat .nb{font-family:var(--serif-en);font-weight:700;font-size:3.2vw;letter-spacing:-.02em;line-height:1;font-feature-settings:"tnum"}
+  .plat .sub{font-family:var(--mono);font-size:10px;letter-spacing:.18em;text-transform:uppercase;opacity:.55;margin-top:.6vh}
+  .plat .fill{font-family:var(--sans-zh);font-weight:300;font-size:2.4vw;opacity:.28;letter-spacing:-.01em;line-height:1}
+
+  /* ============ Rowline（表格行） ============ */
+  .rowline{display:grid;grid-template-columns:1fr 2fr 1fr;gap:2vw;padding:2.2vh 0;border-top:1px solid currentColor;align-items:center;border-color:rgba(127,127,127,.25)}
+  .rowline:last-child{border-bottom:1px solid currentColor;border-color:rgba(127,127,127,.25)}
+  .rowline .k{font-family:var(--serif-zh);font-weight:700;font-size:1.7vw}
+  .rowline .v{font-family:var(--sans-zh);font-weight:400;font-size:max(14px,1.2vw);opacity:.85;line-height:1.55}
+  .rowline .m{font-family:var(--mono);font-size:11px;letter-spacing:.2em;text-transform:uppercase;opacity:.6;justify-self:end}
+
+  /* ============ Pillar（支柱卡片） ============ */
+  .pillar{display:flex;flex-direction:column;gap:1.8vh}
+  .pillar .ic{font-family:var(--serif-en);font-style:italic;font-size:2.6vw;opacity:.45;font-weight:400}
+  .pillar .ic svg{width:2.8vw;height:2.8vw;stroke-width:1.2;opacity:.7}
+  .pillar .t{font-family:var(--serif-zh);font-weight:700;font-size:2.4vw;line-height:1.1}
+  .pillar .d{font-family:var(--sans-zh);font-weight:400;font-size:max(14px,1.1vw);opacity:.76;line-height:1.6}
+
+  /* ============ Signature / Highlight ============ */
+  .sign{font-family:var(--serif-en);font-style:italic;font-weight:500;font-size:2vw;opacity:.7}
+  .hi{position:relative;display:inline}
+  .slide.dark .hi::after{content:"";position:absolute;left:-.1em;right:-.1em;bottom:-.05em;height:.28em;background:rgba(var(--paper-rgb),.15);z-index:-1}
+  .slide.light .hi::after{content:"";position:absolute;left:-.1em;right:-.1em;bottom:-.05em;height:.28em;background:rgba(var(--ink-rgb),.08);z-index:-1}
+
+  /* ============ Icons（Lucide via CDN） ============ */
+  .ico{width:1em;height:1em;display:inline-block;vertical-align:-.12em;stroke:currentColor;fill:none;stroke-width:1.4;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0}
+  .ico-lg,.ico-md,.ico-sm{fill:none;stroke:currentColor;stroke-linecap:round;stroke-linejoin:round}
+  .ico-lg{width:2.6vw;height:2.6vw;stroke-width:1.2;display:inline-block}
+  .ico-md{width:1.8vw;height:1.8vw;stroke-width:1.3;display:inline-block;vertical-align:-.4em}
+  .ico-sm{width:1.1vw;height:1.1vw;stroke-width:1.4;display:inline-block;vertical-align:-.15em;opacity:.7}
+
+  /* ============ 图片占位（虚线框，提示设计师位置） ============ */
+  .img-slot{border:1.5px dashed rgba(127,127,127,.4);display:flex;align-items:center;justify-content:center;flex-direction:column;gap:1vh;padding:2vh 2vw;font-family:var(--mono);font-size:10px;letter-spacing:.28em;text-transform:uppercase;opacity:.55;position:relative;aspect-ratio:16/9;width:100%;max-height:56vh;margin-inline:auto;box-sizing:border-box}
+  .img-slot::before{content:"";position:absolute;inset:8px;border:1px solid currentColor;opacity:.2}
+  .img-slot .plus{font-size:2vw;font-weight:300;opacity:.5;letter-spacing:0}
+  .img-slot .label{position:relative;z-index:2;text-align:center}
+  .img-slot.r-4x3{aspect-ratio:4/3}
+  .img-slot.r-3x2{aspect-ratio:3/2}
+  .img-slot.r-1x1{aspect-ratio:1/1}
+
+  /* ============ 图片实填框（关键：固定高度 + 只裁底部） ============
+     重要约束：高度用内联 height:Nvh 精确控制，不要用 aspect-ratio（会撑破布局）
+     object-position:top center 保证严禁裁剪顶部和左右，只裁剪底部
+  */
+  .frame-img{overflow:hidden;position:relative;background:rgba(0,0,0,.04);box-sizing:border-box;width:100%;border-radius:4px}
+  .slide.dark .frame-img{background:rgba(255,255,255,.04);border-color:rgba(255,255,255,.12)}
+  .frame-img > img{width:100%;height:100%;object-fit:cover;object-position:top center;display:block}
+  #deck img{cursor:zoom-in}
+  .frame-img.fit-contain > img{object-fit:contain;object-position:center center}
+  .frame-img.r-16x9{aspect-ratio:16/9;max-height:64vh}
+  .frame-img.r-16x10{aspect-ratio:16/10;max-height:56vh}
+  .frame-img.r-4x3{aspect-ratio:4/3;max-height:56vh}
+  .frame-img.r-3x2{aspect-ratio:3/2;max-height:46vh}
+  .frame-img.r-3x4{aspect-ratio:3/4;max-height:60vh}
+  .frame-img.r-1x1{aspect-ratio:1/1;max-height:50vh}
+  .frame-img.h-16{height:16vh}
+  .frame-img.h-18{height:18vh}
+  .frame-img.h-22{height:22vh}
+  .frame-img.h-26{height:26vh}
+  .frame-img.h-28{height:28vh}
+  .frame-cap{display:flex;justify-content:space-between;align-items:baseline;gap:1vw;margin-top:.8vh;font-family:var(--mono);font-size:10px;letter-spacing:.22em;text-transform:uppercase;opacity:.72}
+  .frame-cap .pf{font-family:var(--serif-zh);font-weight:600;font-size:max(13px,1vw);letter-spacing:.04em;text-transform:none;opacity:.94}
+  .frame-cap .nb{font-family:var(--serif-en);font-style:italic;font-size:max(15px,1.2vw);letter-spacing:.02em;text-transform:none;opacity:.88}
+  .frame-cap .idx{font-family:var(--mono);opacity:.5}
+  figure.tile{display:flex;flex-direction:column;margin:0;min-width:0}
+  figure.tile > .frame-img{flex:0 0 auto}
+
+  /* ============ 导航 ============ */
+  #nav{position:fixed;left:50%;bottom:2.6vh;transform:translateX(-50%);z-index:30;display:flex;gap:10px;padding:8px 14px;border-radius:999px;background:rgba(0,0,0,.18);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
+  #nav .dot{width:8px;height:8px;border-radius:50%;background:rgba(255,255,255,.3);cursor:pointer;transition:all .3s ease;border:0;padding:0}
+  #nav .dot:hover{background:rgba(255,255,255,.5);transform:scale(1.15)}
+  #nav .dot.active{background:rgba(255,255,255,.95);width:22px;border-radius:999px}
+  #hint{
+    position:fixed;
+    right:3vw;
+    bottom:3vh;
+    z-index:30;
+    display:flex;
+    align-items:center;
+    gap:10px;
+    font-family:var(--mono);
+    font-size:10px;
+    letter-spacing:.2em;
+    text-transform:uppercase;
+    opacity:.9;
+    color:rgba(255,255,255,.96);
+    white-space:nowrap;
+  }
+  #hint .hint-sep{
+    width:1px;
+    height:10px;
+    background:currentColor;
+    opacity:.35;
+  }
+  #hint .hint-btn{
+    border:0;
+    padding:0;
+    font-family:var(--mono);
+    font-size:10px;
+    letter-spacing:.2em;
+    text-transform:uppercase;
+    color:inherit;
+    background:transparent;
+    opacity:inherit;
+    cursor:pointer;
+    transition:all .2s ease;
+    white-space:nowrap;
+  }
+  #hint .hint-btn:hover{opacity:1}
+  #hint .hint-btn:disabled{opacity:.45;cursor:wait}
+  #hint .hint-btn[data-exporting="1"]:disabled{opacity:1;color:inherit}
+  #image-preview{
+    position:fixed;inset:0;z-index:140;
+    display:none;align-items:center;justify-content:center;
+    background:rgba(0,0,0,.9);padding:4vh 4vw;
+  }
+  #image-preview.open{display:flex}
+  #image-preview img{
+    max-width:92vw;max-height:92vh;display:block;
+    object-fit:contain;cursor:zoom-out;
+  }
+  body.image-preview-open #deck,
+  body.image-preview-open #nav,
+  body.image-preview-open #hint{pointer-events:none}
+  body.light-bg #nav{background:rgba(255,255,255,.25)}
+  body.light-bg #nav .dot{background:rgba(var(--ink-rgb),.25)}
+  body.light-bg #nav .dot.active{background:rgba(var(--ink-rgb),.9)}
+  body.light-bg #hint{color:rgba(var(--ink-rgb),.9)}
+
+  @page{
+    size:160mm 90mm;
+    margin:0;
+  }
+  @media print{
+    html,body{
+      width:auto;
+      height:auto;
+      overflow:visible;
+      background:#fff !important;
+      color:#000 !important;
+      -webkit-print-color-adjust:exact;
+      print-color-adjust:exact;
+    }
+    canvas.bg,#nav,#hint,#overview{display:none !important}
+    #deck{
+      position:static !important;
+      width:100% !important;
+      height:auto !important;
+      display:block !important;
+      transform:none !important;
+      transition:none !important;
+      will-change:auto !important;
+      overflow:visible !important;
+    }
+    .slide{
+      position:relative !important;
+      width:100vw !important;
+      height:100vh !important;
+      min-height:100vh !important;
+      page-break-after:always !important;
+      break-after:page !important;
+      page-break-inside:avoid !important;
+      break-inside:avoid-page !important;
+      overflow:hidden !important;
+    }
+    .slide:last-child{
+      page-break-after:auto !important;
+      break-after:auto !important;
+    }
+    .slide::before,.slide::after{
+      backdrop-filter:none !important;
+      -webkit-backdrop-filter:none !important;
+    }
+    body.motion-ready [data-anim]{
+      opacity:1 !important;
+      transform:none !important;
+    }
+    body.motion-ready [data-animate="pipeline"] [data-anim]{
+      opacity:1 !important;
+    }
+    .h-hero,.h-xl,.display,.display-zh,.big-num,.mid-num,.stat-nb,.step-nb{
+      white-space:nowrap !important;
+      text-wrap:nowrap !important;
+    }
+    .body-zh,.lead,.step-desc,.callout,.v,.d{
+      max-width:72ch;
+      line-height:1.65 !important;
+      overflow-wrap:normal !important;
+      word-break:normal !important;
+    }
+  }
+
+  /* ============================================================
+     ============ LAYOUTS API · 面向 agent 的类（v2）============
+     所有 layouts.md 中的骨架都基于下面这套命名。
+     如果你在 layouts.md 里看到某个类，它必须在下面有定义。
+     ============================================================ */
+
+  /* ---------- .frame：每页主内容容器 ---------- */
+  .frame{flex:1;display:flex;flex-direction:column;min-height:0;overflow:hidden}
+  /* 当 .frame 同时加了 grid 类时，grid 的 display:grid 覆盖 flex */
+  .frame.grid-2-7-5,
+  .frame.grid-2-6-6,
+  .frame.grid-2-8-4,
+  .frame.grid-3-3,
+  .frame.grid-6{display:grid}
+
+  /* ---------- 标题层级（API 名称，衬线为主） ---------- */
+  .h-hero{
+    font-family:var(--serif-zh);
+    font-weight:900;
+    font-size:10vw;
+    line-height:.96;
+    letter-spacing:-.02em;
+  }
+  .h-xl{
+    font-family:var(--serif-zh);
+    font-weight:700;
+    font-size:6.2vw;
+    line-height:1.08;
+    letter-spacing:-.01em;
+  }
+  .h-sub{
+    font-family:var(--serif-zh);
+    font-weight:500;
+    font-size:3.1vw;
+    line-height:1.25;
+    letter-spacing:0;
+    opacity:.7;
+  }
+  .h-md{
+    font-family:var(--serif-zh);
+    font-weight:600;
+    font-size:2.3vw;
+    line-height:1.3;
+  }
+  /* 英文标题专用（Playfair 衬线） */
+  .h-hero-en,.h-xl-en{font-family:var(--serif-en);letter-spacing:-.025em}
+
+  /* ---------- lead 引语 ---------- */
+  .lead{
+    font-family:var(--serif-zh);
+    font-weight:400;
+    font-size:1.75vw;
+    line-height:1.5;
+    opacity:.86;
+  }
+
+  /* ---------- meta-row 底部元数据 ---------- */
+  .meta-row{
+    display:flex;
+    gap:1.2em;
+    align-items:baseline;
+    flex-wrap:wrap;
+    font-family:var(--mono);
+    font-size:max(12px,.92vw);
+    letter-spacing:.16em;
+    text-transform:uppercase;
+    opacity:.6;
+  }
+
+  /* ---------- stat-card（数据大字报用） ---------- */
+  .stat-card{
+    display:flex;
+    flex-direction:column;
+    gap:.8vh;
+    align-items:flex-start;
+    padding-top:1.6vh;
+    border-top:1px solid currentColor;
+    border-color:rgba(127,127,127,.3);
+  }
+  .stat-card .stat-label{
+    font-family:var(--mono);
+    font-size:max(10px,.78vw);
+    letter-spacing:.24em;
+    text-transform:uppercase;
+    opacity:.55;
+  }
+  .stat-card .stat-nb{
+    font-family:var(--serif-en);
+    font-weight:800;
+    font-size:5.8vw;
+    line-height:.9;
+    letter-spacing:-.03em;
+    font-feature-settings:"tnum";
+    margin-top:.4vh;
+  }
+  .stat-card .stat-nb .stat-unit{
+    font-family:var(--serif-zh);
+    font-weight:500;
+    font-size:.38em;
+    letter-spacing:0;
+    opacity:.72;
+    margin-left:.14em;
+  }
+  .stat-card .stat-note{
+    font-family:var(--sans-zh);
+    font-weight:400;
+    font-size:max(13px,1.05vw);
+    line-height:1.5;
+    opacity:.72;
+    margin-top:.6vh;
+  }
+  /* 当 stat-card 用于 grid-4（2x2），数字适度放大；若页面有标题+引文在上方，可内联 style 覆盖为更小值 */
+  .grid-4 .stat-card .stat-nb{font-size:5vw}
+  /* 当只有 3 个，字也可以稍大 */
+  .grid-3 .stat-card .stat-nb{font-size:6.8vw}
+
+  /* ---------- pipeline（流水线） ---------- */
+  .pipeline-section{
+    margin-top:4.4vh;
+    padding-top:2.8vh;
+    border-top:1px dashed rgba(127,127,127,.32);
+  }
+  .pipeline-section:first-of-type{
+    border-top:0;
+    padding-top:0;
+    margin-top:3vh;
+  }
+  .pipeline-label{
+    font-family:var(--mono);
+    font-size:max(11px,.85vw);
+    letter-spacing:.24em;
+    text-transform:uppercase;
+    opacity:.62;
+    margin-bottom:2.2vh;
+  }
+  .pipeline{
+    display:grid;
+    grid-template-columns:repeat(5,1fr);
+    gap:1.2vw;
+  }
+  .pipeline[data-cols="3"]{grid-template-columns:repeat(3,1fr)}
+  .pipeline[data-cols="4"]{grid-template-columns:repeat(4,1fr)}
+  .pipeline[data-cols="6"]{grid-template-columns:repeat(6,1fr)}
+  .step{
+    display:flex;
+    flex-direction:column;
+    gap:.8vh;
+    padding-top:1.4vh;
+    border-top:1px solid currentColor;
+    border-color:rgba(127,127,127,.35);
+  }
+  .step-nb{
+    font-family:var(--serif-en);
+    font-style:italic;
+    font-weight:500;
+    font-size:1.15vw;
+    opacity:.45;
+  }
+  .step-title{
+    font-family:var(--sans-zh);
+    font-weight:700;
+    font-size:1.55vw;
+    letter-spacing:.01em;
+    line-height:1.2;
+  }
+  .step-desc{
+    font-family:var(--sans-zh);
+    font-weight:400;
+    font-size:max(12px,.95vw);
+    line-height:1.45;
+    opacity:.72;
+  }
+
+  /* ---------- 网格（layouts.md 所用） ---------- */
+  /* 这些类独立挂到任何容器上都能生效，不依赖 .frame 复合选择器 */
+  .grid-2-7-5{display:grid;grid-template-columns:7fr 5fr;gap:3vw 4vh;align-items:start}
+  .grid-2-6-6{display:grid;grid-template-columns:1fr 1fr;gap:3vw 4vh;align-items:start}
+  .grid-2-8-4{display:grid;grid-template-columns:8fr 4fr;gap:3vw 4vh;align-items:start}
+  .grid-3-3{
+    display:grid;
+    grid-template-columns:repeat(3,1fr);
+    grid-auto-rows:minmax(0,1fr);
+    gap:2.4vh 2vw;
+  }
+  /* grid-6 已在旧样式里定义为 3x2，这里仅补 align */
+
+  /* ---------- 图片 frame-img（layouts.md 主命名） ---------- */
+  /* 在旧样式里已定义，这里补 img-cap 命名别名与增强 */
+  figure.frame-img{margin:0;display:flex;flex-direction:column;min-width:0}
+  .img-cap{
+    display:block;
+    margin-top:.8vh;
+    font-family:var(--mono);
+    font-size:max(10px,.8vw);
+    letter-spacing:.22em;
+    text-transform:uppercase;
+    opacity:.6;
+  }
+  /* callout src 命名别名 */
+  .callout-src{
+    display:block;
+    margin-top:1.6vh;
+    font-family:var(--mono);
+    font-size:11px;
+    letter-spacing:.2em;
+    text-transform:uppercase;
+    opacity:.6;
+  }
+
+  /* ---------- chrome & foot 补位（layouts.md 简单写法） ---------- */
+  .chrome{font-family:var(--mono);font-size:max(11px,.78vw);letter-spacing:.2em;text-transform:uppercase;opacity:.62}
+  .foot{font-family:var(--mono);font-size:max(11px,.78vw);letter-spacing:.18em;text-transform:uppercase;opacity:.5}
+
+  /* ============ 动效系统(Motion One 驱动) ============
+     所有 [data-anim] 元素默认隐藏,进入页面时由 JS 逐个揭示。
+     - cascade(默认):按 DOM 顺序 stagger 120ms 淡入 + y:16→0
+     - hero(hero 页自动):慢一点的 stagger 180ms
+     - quote(含 [data-anim="line"]):逐行 600ms 淡入
+     - directional(含 [data-anim="left|right"]):左→分隔线→右
+     - pipeline(data-animate="pipeline"):Space/→ 手动推进
+     Motion One 没加载成功时(CDN 断 + 本地丢),所有 [data-anim] 会兜底显示。
+  */
+  [data-anim]{opacity:1}
+  body.motion-ready [data-anim]{opacity:0}
+  body.motion-ready [data-anim="left"]{transform:translateX(-24px)}
+  body.motion-ready [data-anim="right"]{transform:translateX(24px)}
+  body.motion-ready [data-anim="line"]{opacity:0;transform:translateY(10px)}
+  body.motion-ready [data-animate="pipeline"] [data-anim]{opacity:.15}
+  #overview [data-anim]{opacity:1 !important;transform:none !important}
+  #overview [data-animate="pipeline"] [data-anim]{opacity:1 !important}
+  /* ---------- 响应式降级 ---------- */
+  @media (max-width:900px){
+    .display{font-size:16vw}
+    .display-zh{font-size:12vw}
+    .h1-zh{font-size:7vw}
+    .h-hero{font-size:14vw}
+    .h-xl{font-size:9vw}
+    .pipeline{grid-template-columns:repeat(2,1fr)}
+    .grid-2-7-5,.grid-2-6-6,.grid-2-8-4{grid-template-columns:1fr}
+  }
+</style>
+</head>
+<body>
+
+<canvas id="bg-dark" class="bg"></canvas>
+<canvas id="bg-light" class="bg"></canvas>
+<div id="hint">
+  <span>← → 翻页</span>
+  <span class="hint-sep"></span>
+  <span>ESC 索引</span>
+  <span class="hint-sep"></span>
+  <button id="export-stable" class="hint-btn" type="button" aria-label="导出 PDF">导出 PDF</button>
+</div>
+
+<div id="deck">
+
+<!-- ============================================================
+     SLIDES 插入区 · 在此处填充所有 <section class="slide ..."> 页面
+     每页模板参考 references/page-patterns.md
+     页面组件参考 references/components.md
+     ============================================================ -->
+
+<section class="slide hero dark">
+  <div class="chrome"><div>Lesson 3 · 高级提示词和提示工程</div><div>Cover · 01 / 41</div></div>
+  <div class="frame" style="display:grid;gap:4vh;align-content:center;min-height:80vh">
+    <div class="kicker" data-anim>AI 课程 · 第三课</div>
+    <h1 class="h-hero" data-anim>高级提示词</h1>
+    <h2 class="h-sub" data-anim>和提示工程</h2>
+  </div>
+  <div class="foot"><div>课程总览</div><div>2026</div></div>
+</section>
+
+<section class="slide light">
+  <div class="chrome"><div>导航 · 三幕结构</div><div>Intro · 02 / 41</div></div>
+  <div class="frame" style="padding-top:5vh">
+    <div class="kicker" data-anim>课程地图</div>
+    <h2 class="h-xl" style="font-size:5.3vw" data-anim>Rundown</h2>
+    <div class="grid-3" style="margin-top:6vh">
+      <div class="stat-card" data-anim><div class="stat-label">Act I</div><div class="stat-nb" style="font-size:4.4vw">高级构建</div><div class="stat-note">技巧 1-4：上下文/规划样例/发散收敛/分步推进</div></div>
+      <div class="stat-card" data-anim><div class="stat-label">Act II</div><div class="stat-nb" style="font-size:4.4vw">过程控制</div><div class="stat-note">技巧 5-8：自动生成/逆向挑战/一致性/因果闭环</div></div>
+      <div class="stat-card" data-anim><div class="stat-label">Act III</div><div class="stat-nb" style="font-size:4.4vw">质量治理</div><div class="stat-note">技巧 9-11：可验证/落盘/多语单语出</div></div>
+    </div>
+  </div>
+  <div class="foot"><div>先认地图，再进细节</div><div>结构先行</div></div>
+</section>
+
+<section class="slide light">
+  <div class="chrome"><div>Lesson 3 · Advanced Prompt Map</div><div>Map · 03 / 41</div></div>
+  <div class="frame" style="padding-top:4vh">
+    <div class="kicker" data-anim>本次课程技巧全景图</div>
+    <h2 class="h-xl" style="font-size:4.6vw" data-anim>技巧全景图</h2>
+    <p class="lead" style="font-size:1.5vw;margin-top:.8vh" data-anim>从信息完备，到过程控制，再到质量治理</p>
+    <figure class="tile" data-anim style="margin-top:4vh">
+      <div class="frame-img r-16x9 fit-contain" style="height:58vh;max-height:58vh;width:103vh;max-width:100%;margin-inline:auto;background:transparent">
+        <img src="images/3-1-skill-map.png?v=1" alt="本次课程技巧全景图">
+      </div>
+    </figure>
+  </div>
+  <div class="foot"><div>Advanced Prompt Map · Lesson 3</div><div>—</div></div>
+</section>
+
+<section class="slide hero dark">
+  <div class="chrome"><div>高级构建</div><div>Divider · 04 / 41</div></div>
+  <div class="frame" style="display:grid;gap:5vh;align-content:center;min-height:80vh">
+    <div class="kicker" data-anim>Act</div>
+    <h1 class="h-hero" style="font-size:8.5vw" data-anim>高级构建</h1>
+    <p class="lead" style="max-width:58vw" data-anim>先把信息条件构全，再追求产出漂亮。</p>
+  </div>
+  <div class="foot"><div>高级构建</div><div>—</div></div>
+</section>
+
+<section class="slide dark">
+    <div class="chrome"><div>高级构建 · 技巧 1</div><div>P1 · 05 / 41</div></div>
+    <div class="frame grid-2-7-5" style="padding-top:6vh">
+      <div class="col" style="justify-content:space-between;min-height:66vh" data-anim>
+        <div>
+          <div class="kicker">技巧 1 · 认知页</div>
+          <h2 class="h-xl" style="font-size:4.2vw">上下文越全越准</h2>
+          <p class="lead" style="font-size:1.55vw;margin-top:1.2vh">用信息完备来提精度</p>
+        </div>
+        <div class="body-zh" style="font-size:1.08vw;line-height:1.8;max-width:42vw">
+          <p>高级提示工程的第一原则不是加更多规则，而是补足关键上下文。模型输出的“准确性”本质上取决于信息条件，而非修辞力度。很多失败案例看似是提示词写得不够强硬，实则是任务背景缺失：目标对象不明确、历史决策未知、资源约束未说明、风险偏好不透明。信息完备不是信息堆砌，关键在于提供“与决策直接相关”的事实。建议按四层补充：业务目标层、场景约束层、已知事实层、验收标准层。这样模型会在你给定的语义空间内推理，而不是在通用语料概率里猜测。对复杂业务问题，这种做法比追加“请务必”“请严格”更有效，且更可复用。</p>
+        </div>
+      </div>
+      <figure class="tile" data-anim>
+        <div class="frame-img r-3x4 fit-contain" style="height:68vh;max-height:68vh;width:51vh;max-width:100%;margin-inline:auto">
+          <img src="images/3-2-上下文越全越准.jpg" alt="技巧1：上下文越全越准">
+        </div>
+      </figure>
+    </div>
+  </section>
+
+<section class="slide light">
+    <div class="chrome"><div>高级构建 · 技巧 1</div><div>P2 · 06 / 41</div></div>
+    <div class="frame" style="padding-top:6vh">
+      <div class="kicker" data-anim>技巧 1 · 方法页</div>
+      <h2 class="h-xl" style="font-size:4vw" data-anim>上下文越全越准</h2>
+      <p class="lead" style="font-size:1.18vw;line-height:1.62;max-width:78vw;margin-top:1.4vh" data-anim>高级提示工程的第一原则不是加更多规则，而是补足关键上下文。模型输出的“准确性”本质上取决于信息条件，而非修辞力度。很多失败案例看似是提示词写得不够强硬，实则是任务背景缺失：目标对象不明确、历史决策未知、资源约束未说明、风险偏好不透明。信息完备不是信息堆砌，关键在于提供“与决策直接相关”的事实。建议按四层补充：业务目标层、场景约束层、已知事实层、验收标准层。这样模型会在你给定的语义空间内推理，而不是在通用语料概率里猜测。对复杂业务问题，这种做法比追加“请务必”“请严格”更有效，且更可复用。</p>
+      <div class="grid-3" style="margin-top:5vh;align-items:start">
+        <div class="stat-card" data-anim>
+          <div class="stat-label">怎么做</div>
+          <div class="body-zh" style="font-size:1.02vw;line-height:1.8;opacity:.92">
+            <p>1）高级提示工程的第一原则不是加更多规则，而是补足关键上下文。</p>
+            <p>2）模型输出的“准确性”本质上取决于信息条件，而非修辞力度。</p>
+            <p>3）很多失败案例看似是提示词写得不够强硬，实则是任务背景缺失：目标对象不明确、历史决策未知、资源约束未说明、风险偏好不透明。</p>
+          </div>
+        </div>
+        <div class="stat-card" data-anim>
+          <div class="stat-label">验收标准</div>
+          <div class="body-zh" style="font-size:1.02vw;line-height:1.8;opacity:.92">
+            <p>1）信息完备不是信息堆砌，关键在于提供“与决策直接相关”的事实。</p>
+            <p>2）建议按四层补充：业务目标层、场景约束层、已知事实层、验收标准层。</p>
+            <p>3）这样模型会在你给定的语义空间内推理，而不是在通用语料概率里猜测。</p>
+            <p style="margin-top:1.4vh">输出需要可复用、可追溯、可执行。</p>
+          </div>
+        </div>
+        <div class="stat-card" data-anim>
+          <div class="stat-label">常见误区</div>
+          <div class="body-zh" style="font-size:1.02vw;line-height:1.8;opacity:.92">
+            <p>误区1：对复杂业务问题，这种做法比追加“请务必”“请严格”更有效，且更可复用。</p>
+            <p>误区2：若信息不足先补充再执行。</p>
+            <p>修正：若信息不足先补充再执行。</p>
+            <p style="margin-top:1.4vh">口诀：先定边界，再控过程，最后再出结论。</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+<section class="slide light">
+    <div class="chrome"><div>高级构建 · 技巧 1</div><div>P3 · 07 / 41</div></div>
+    <div class="frame prompt-frame">
+      <div class="kicker" data-anim>技巧 1 · 错误与正确对照</div>
+      <h2 class="h-xl" style="font-size:3.7vw" data-anim>上下文越全越准</h2>
+      <div class="grid-3 prompt-grid">
+        <div class="col prompt-col" data-anim>
+          <div class="meta">示例 1</div>
+          <div class="callout prompt-card">
+            <div class="meta">错误提示词</div>
+            <pre class="prompt-pre">给我一个增长方案，越详细越好。</pre>
+          </div>
+          <div class="callout prompt-card">
+            <div class="meta">正确提示词</div>
+            <pre class="prompt-pre correct">## 任务背景
+我们正在为一款月活 5 万的产品设计增长方案，当前核心问题是次月留存偏低。
+
+## 已知条件
+- 当前月活：5 万
+- 可用预算：30 万
+- 执行周期：8 周
+- 执行团队：4 人
+- 业务目标：提升次月留存 5%
+
+## 输出要求
+请给出 3 套可执行增长方案，并分别说明：
+1. 核心思路
+2. 执行步骤
+3. 所需资源
+4. 主要风险
+5. 验证指标
+
+## 约束
+不要给泛泛而谈的建议，所有方案必须能在 8 周内落地，并说明风险差异。</pre>
+          </div>
+        </div><div class="col prompt-col" data-anim>
+          <div class="meta">示例 2</div>
+          <div class="callout prompt-card">
+            <div class="meta">错误提示词</div>
+            <pre class="prompt-pre">优化这个流程。</pre>
+          </div>
+          <div class="callout prompt-card">
+            <div class="meta">正确提示词</div>
+            <pre class="prompt-pre correct">## 现状背景
+我们正在优化一个内部审批流程，目前主要瓶颈集中在审批环节。
+
+## 已知条件
+- 当前审批平均耗时：4 天
+- 合规规则：不可修改
+- 优化范围：流程协同、材料准备、节点衔接、提醒机制
+
+## 优化目标
+在不改变合规规则的前提下，缩短审批等待时间，并降低反复补材料的概率。
+
+## 输出要求
+请给出一套提效方案，包含：
+1. 当前瓶颈判断
+2. 可调整环节
+3. 具体改进动作
+4. 预期节省时间
+5. 需要协同的角色
+
+## 风险提示
+请标注哪些动作可能带来合规风险，并给出规避方式。</pre>
+          </div>
+        </div><div class="col prompt-col" data-anim>
+          <div class="meta">示例 3</div>
+          <div class="callout prompt-card">
+            <div class="meta">错误提示词</div>
+            <pre class="prompt-pre">做个培训设计。</pre>
+          </div>
+          <div class="callout prompt-card">
+            <div class="meta">正确提示词</div>
+            <pre class="prompt-pre correct">## 受众背景
+课程面向入职 0-6 个月的新员工，学员对业务流程和工单规范还不稳定。
+
+## 课程条件
+- 单次时长：55 分钟
+- 训练场景：新人独立处理基础工单
+- 课程目标：学员在一周内可以独立完成常见工单
+
+## 学习目标
+请让课程设计围绕以下能力展开：
+1. 判断工单类型
+2. 找到处理流程
+3. 按规范填写处理记录
+4. 识别需要升级的问题
+
+## 输出要求
+请给出课程结构与练习设计，包含：
+- 时间分配
+- 每个环节的教学目标
+- 课堂练习
+- 课后任务
+- 讲师检查点
+
+## 验收标准
+课程结束后一周内，新人可以独立完成常见工单，并知道何时升级处理。</pre>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+<section class="slide light">
+    <div class="chrome"><div>高级构建 · 技巧 2</div><div>P1 · 08 / 41</div></div>
+    <div class="frame grid-2-7-5" style="padding-top:6vh">
+      <div class="col" style="justify-content:space-between;min-height:66vh" data-anim>
+        <div>
+          <div class="kicker">技巧 2 · 认知页</div>
+          <h2 class="h-xl" style="font-size:4.2vw">先规划再给样例</h2>
+          <p class="lead" style="font-size:1.55vw;margin-top:1.2vh">用元提示加小样本来稳输出</p>
+        </div>
+        <div class="body-zh" style="font-size:1.08vw;line-height:1.8;max-width:42vw">
+          <p>这是一条组合技：先让模型规划，再用最小高质量样例做行为锚定。元提示词负责“方法正确”，Few-shot 负责“表现稳定”。先规划可以让模型先产出步骤、检查点和风险，再进入正文，避免一上来就在错误路径上高效输出。样例部分强调“少而准”：给 1-3 个高代表性样本，覆盖主流场景和边界情况，比堆十几个相似样例更有效。样例应突出结构与判定标准，而不是内容堆量。对于格式强约束、质量稳定要求高的任务，这种组合能明显提升首稿可用率，并降低多轮修订成本。它的本质是把“思路控制”和“行为示范”分离，分别施加约束。</p>
+        </div>
+      </div>
+      <figure class="tile" data-anim>
+        <div class="frame-img r-3x4 fit-contain" style="height:68vh;max-height:68vh;width:51vh;max-width:100%;margin-inline:auto">
+          <img src="images/3-3-先规划再给样例.jpg" alt="技巧2：先规划再给样例">
+        </div>
+      </figure>
+    </div>
+  </section>
+
+<section class="slide dark">
+    <div class="chrome"><div>高级构建 · 技巧 2</div><div>P2 · 09 / 41</div></div>
+    <div class="frame" style="padding-top:6vh">
+      <div class="kicker" data-anim>技巧 2 · 方法页</div>
+      <h2 class="h-xl" style="font-size:4vw" data-anim>先规划再给样例</h2>
+      <p class="lead" style="font-size:1.18vw;line-height:1.62;max-width:78vw;margin-top:1.4vh" data-anim>这是一条组合技：先让模型规划，再用最小高质量样例做行为锚定。元提示词负责“方法正确”，Few-shot 负责“表现稳定”。先规划可以让模型先产出步骤、检查点和风险，再进入正文，避免一上来就在错误路径上高效输出。样例部分强调“少而准”：给 1-3 个高代表性样本，覆盖主流场景和边界情况，比堆十几个相似样例更有效。样例应突出结构与判定标准，而不是内容堆量。对于格式强约束、质量稳定要求高的任务，这种组合能明显提升首稿可用率，并降低多轮修订成本。它的本质是把“思路控制”和“行为示范”分离，分别施加约束。</p>
+      <div class="grid-3" style="margin-top:5vh;align-items:start">
+        <div class="stat-card" data-anim>
+          <div class="stat-label">怎么做</div>
+          <div class="body-zh" style="font-size:1.02vw;line-height:1.8;opacity:.92">
+            <p>1）这是一条组合技：先让模型规划，再用最小高质量样例做行为锚定。</p>
+            <p>2）元提示词负责“方法正确”，Few-shot 负责“表现稳定”。</p>
+            <p>3）先规划可以让模型先产出步骤、检查点和风险，再进入正文，避免一上来就在错误路径上高效输出。</p>
+          </div>
+        </div>
+        <div class="stat-card" data-anim>
+          <div class="stat-label">验收标准</div>
+          <div class="body-zh" style="font-size:1.02vw;line-height:1.8;opacity:.92">
+            <p>1）样例部分强调“少而准”：给 1-3 个高代表性样本，覆盖主流场景和边界情况，比堆十几个相似样例更有效。</p>
+            <p>2）样例应突出结构与判定标准，而不是内容堆量。</p>
+            <p>3）对于格式强约束、质量稳定要求高的任务，这种组合能明显提升首稿可用率，并降低多轮修订成本。</p>
+            <p style="margin-top:1.4vh">输出需要可复用、可追溯、可执行。</p>
+          </div>
+        </div>
+        <div class="stat-card" data-anim>
+          <div class="stat-label">常见误区</div>
+          <div class="body-zh" style="font-size:1.02vw;line-height:1.8;opacity:.92">
+            <p>误区1：它的本质是把“思路控制”和“行为示范”分离，分别施加约束。</p>
+            <p>误区2：若信息不足先补充再执行。</p>
+            <p>修正：若信息不足先补充再执行。</p>
+            <p style="margin-top:1.4vh">口诀：先定边界，再控过程，最后再出结论。</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+<section class="slide light">
+    <div class="chrome"><div>高级构建 · 技巧 2</div><div>P3 · 10 / 41</div></div>
+    <div class="frame prompt-frame">
+      <div class="kicker" data-anim>技巧 2 · 错误与正确对照</div>
+      <h2 class="h-xl" style="font-size:3.7vw" data-anim>先规划再给样例</h2>
+      <div class="grid-3 prompt-grid">
+        <div class="col prompt-col" data-anim>
+          <div class="meta">示例 1</div>
+          <div class="callout prompt-card">
+            <div class="meta">错误提示词</div>
+            <pre class="prompt-pre">直接写，参考你自己的最佳实践。</pre>
+          </div>
+          <div class="callout prompt-card">
+            <div class="meta">正确提示词</div>
+            <pre class="prompt-pre correct">## 任务背景
+我要生成一份对外客户案例初稿，但不希望你直接开始写正文。
+
+## 执行计划
+请先输出写作计划，必须包含：
+1. 写作步骤
+2. 每一步的检查点
+3. 可能跑偏的风险
+4. 需要我确认的信息
+
+## 样例规则
+我会提供 2 个样例，样例只用于对齐结构、语气和口径，不要求复用其中的业务内容。
+
+## 生成要求
+在计划确认后，再按样例风格生成正文。
+
+## 验收标准
+最终内容需要结构稳定、语气一致，并能说明哪些地方参考了样例规则。</pre>
+          </div>
+        </div><div class="col prompt-col" data-anim>
+          <div class="meta">示例 2</div>
+          <div class="callout prompt-card">
+            <div class="meta">错误提示词</div>
+            <pre class="prompt-pre">我给你 15 个例子，你照着写。</pre>
+          </div>
+          <div class="callout prompt-card">
+            <div class="meta">正确提示词</div>
+            <pre class="prompt-pre correct">## 任务背景
+我要让你学习一组内容分类样例，并生成新的分类结果。
+
+## 样例输入
+我会提供 3 个样例：
+1. 标准场景：代表最常见写法
+2. 边界场景：代表容易误判的情况
+3. 反例：代表不应采用的写法
+
+## 执行步骤
+请先总结样例背后的判断规则，再开始处理新内容。
+
+## 输出要求
+请输出：
+1. 样例规则总结
+2. 新内容分类结果
+3. 每条结果的判断依据
+4. 与反例的区别
+
+## 验收标准
+不得机械拼接样例原句，必须用规则解释你的输出。</pre>
+          </div>
+        </div><div class="col prompt-col" data-anim>
+          <div class="meta">示例 3</div>
+          <div class="callout prompt-card">
+            <div class="meta">错误提示词</div>
+            <pre class="prompt-pre">你就按感觉做。</pre>
+          </div>
+          <div class="callout prompt-card">
+            <div class="meta">正确提示词</div>
+            <pre class="prompt-pre correct">## 任务背景
+我要生成一份运营复盘模板，但目前只有少量样例和明确验收标准。
+
+## 执行计划
+请先说明你会如何拆解任务，包括：
+1. 先识别输出结构
+2. 再提取样例风格
+3. 最后按验收标准生成内容
+
+## 样例使用规则
+样例用于参考表达方式和结构，不作为最高优先级规则。
+
+## 冲突处理
+如果样例与验收标准冲突，请以验收标准为准，并说明你舍弃了样例中的哪类写法。
+
+## 输出要求
+请先给任务拆解，再输出最终模板。</pre>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+<section class="slide dark">
+    <div class="chrome"><div>高级构建 · 技巧 3</div><div>P1 · 11 / 41</div></div>
+    <div class="frame grid-2-7-5" style="padding-top:6vh">
+      <div class="col" style="justify-content:space-between;min-height:66vh" data-anim>
+        <div>
+          <div class="kicker">技巧 3 · 认知页</div>
+          <h2 class="h-xl" style="font-size:4.2vw">先发散再做收敛</h2>
+          <p class="lead" style="font-size:1.55vw;margin-top:1.2vh">用熵值切换来控过程</p>
+        </div>
+        <div class="body-zh" style="font-size:1.08vw;line-height:1.8;max-width:42vw">
+          <p>高级任务中，发散与收敛应分阶段管理。高熵阶段用于探索可能性，鼓励备选路径、假设比较和多方案并行；低熵阶段用于定稿执行，强调一致口径、固定结构和严格边界。如果两种目标混在同一提示中，常见结果是“既不够创新，也不够可落地”。建议把流程拆为两段：先让模型生成多个候选方案并说明适用条件，再通过明确筛选标准选出一条路径进行收敛输出。这样可避免过早锁定导致方案单一，也避免持续发散导致无法交付。这个技巧特别适合策略设计、课程方案、产品路线等需要先探索后决策的任务。</p>
+        </div>
+      </div>
+      <figure class="tile" data-anim>
+        <div class="frame-img r-3x4 fit-contain" style="height:68vh;max-height:68vh;width:51vh;max-width:100%;margin-inline:auto">
+          <img src="images/3-4-先发散再做收敛.jpg" alt="技巧3：先发散再做收敛">
+        </div>
+      </figure>
+    </div>
+  </section>
+
+<section class="slide light">
+    <div class="chrome"><div>高级构建 · 技巧 3</div><div>P2 · 12 / 41</div></div>
+    <div class="frame" style="padding-top:6vh">
+      <div class="kicker" data-anim>技巧 3 · 方法页</div>
+      <h2 class="h-xl" style="font-size:4vw" data-anim>先发散再做收敛</h2>
+      <p class="lead" style="font-size:1.18vw;line-height:1.62;max-width:78vw;margin-top:1.4vh" data-anim>高级任务中，发散与收敛应分阶段管理。高熵阶段用于探索可能性，鼓励备选路径、假设比较和多方案并行；低熵阶段用于定稿执行，强调一致口径、固定结构和严格边界。如果两种目标混在同一提示中，常见结果是“既不够创新，也不够可落地”。建议把流程拆为两段：先让模型生成多个候选方案并说明适用条件，再通过明确筛选标准选出一条路径进行收敛输出。这样可避免过早锁定导致方案单一，也避免持续发散导致无法交付。这个技巧特别适合策略设计、课程方案、产品路线等需要先探索后决策的任务。</p>
+      <div class="grid-3" style="margin-top:5vh;align-items:start">
+        <div class="stat-card" data-anim>
+          <div class="stat-label">怎么做</div>
+          <div class="body-zh" style="font-size:1.02vw;line-height:1.8;opacity:.92">
+            <p>1）高级任务中，发散与收敛应分阶段管理。</p>
+            <p>2）高熵阶段用于探索可能性，鼓励备选路径、假设比较和多方案并行；</p>
+            <p>3）低熵阶段用于定稿执行，强调一致口径、固定结构和严格边界。</p>
+          </div>
+        </div>
+        <div class="stat-card" data-anim>
+          <div class="stat-label">验收标准</div>
+          <div class="body-zh" style="font-size:1.02vw;line-height:1.8;opacity:.92">
+            <p>1）如果两种目标混在同一提示中，常见结果是“既不够创新，也不够可落地”。</p>
+            <p>2）建议把流程拆为两段：先让模型生成多个候选方案并说明适用条件，再通过明确筛选标准选出一条路径进行收敛输出。</p>
+            <p>3）这样可避免过早锁定导致方案单一，也避免持续发散导致无法交付。</p>
+            <p style="margin-top:1.4vh">输出需要可复用、可追溯、可执行。</p>
+          </div>
+        </div>
+        <div class="stat-card" data-anim>
+          <div class="stat-label">常见误区</div>
+          <div class="body-zh" style="font-size:1.02vw;line-height:1.8;opacity:.92">
+            <p>误区1：这个技巧特别适合策略设计、课程方案、产品路线等需要先探索后决策的任务。</p>
+            <p>误区2：若信息不足先补充再执行。</p>
+            <p>修正：若信息不足先补充再执行。</p>
+            <p style="margin-top:1.4vh">口诀：先定边界，再控过程，最后再出结论。</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+<section class="slide light">
+    <div class="chrome"><div>高级构建 · 技巧 3</div><div>P3 · 13 / 41</div></div>
+    <div class="frame prompt-frame">
+      <div class="kicker" data-anim>技巧 3 · 错误与正确对照</div>
+      <h2 class="h-xl" style="font-size:3.7vw" data-anim>先发散再做收敛</h2>
+      <div class="grid-3 prompt-grid">
+        <div class="col prompt-col" data-anim>
+          <div class="meta">示例 1</div>
+          <div class="callout prompt-card">
+            <div class="meta">错误提示词</div>
+            <pre class="prompt-pre">给我一个又创新又严谨且能立刻执行的唯一方案。</pre>
+          </div>
+          <div class="callout prompt-card">
+            <div class="meta">正确提示词</div>
+            <pre class="prompt-pre correct">## 任务背景
+我要为一个新用户激活项目选择执行策略，不能一开始就锁定单一方案。
+
+## 发散阶段
+请先给出 4 个不同策略方向，每个方向说明：
+1. 核心假设
+2. 适用条件
+3. 预期收益
+4. 主要风险
+
+## 收敛标准
+请用以下维度筛选：
+- 成本
+- 风险
+- 见效速度
+- 团队可执行性
+
+## 最终输出
+请选出 1 个最推荐方案，并说明为什么它优于其他 3 个方向。
+
+## 约束
+不要直接给唯一答案，必须先发散再收敛。</pre>
+          </div>
+        </div><div class="col prompt-col" data-anim>
+          <div class="meta">示例 2</div>
+          <div class="callout prompt-card">
+            <div class="meta">错误提示词</div>
+            <pre class="prompt-pre">一次性把所有内容定稿。</pre>
+          </div>
+          <div class="callout prompt-card">
+            <div class="meta">正确提示词</div>
+            <pre class="prompt-pre correct">## 任务背景
+我要设计一门 60 分钟内部培训课，目前还没有最终目录。
+
+## 发散阶段
+请先生成 3 套候选课程目录，每套目录说明：
+1. 适合的学员类型
+2. 核心训练重点
+3. 可能的优缺点
+
+## 收敛标准
+最终目录必须服务于目标：让学员课后能独立完成一次基础任务。
+
+## 最终输出
+请收敛成 1 套最终目录，并删除与目标弱相关的内容。
+
+## 验收标准
+最终目录需要包含时间分配、练习环节和课后验证方式。</pre>
+          </div>
+        </div><div class="col prompt-col" data-anim>
+          <div class="meta">示例 3</div>
+          <div class="callout prompt-card">
+            <div class="meta">错误提示词</div>
+            <pre class="prompt-pre">多想点，但别太复杂，直接可执行。</pre>
+          </div>
+          <div class="callout prompt-card">
+            <div class="meta">正确提示词</div>
+            <pre class="prompt-pre correct">## 任务背景
+我要为一个产品功能制定上线沟通方案，需要先探索不同表达路径，再形成定稿。
+
+## 探索阶段
+请先给出 3 种沟通路径：
+1. 面向用户价值
+2. 面向使用步骤
+3. 面向风险说明
+
+## 收敛阶段
+请根据清晰度、执行成本和用户理解难度，选择 1 种路径进入定稿。
+
+## 固定边界
+定稿阶段请固定：
+- 标题结构
+- 语气风格
+- 禁止夸大承诺
+- 不新增未经确认的功能信息
+
+## 最终输出
+请给出单一可执行版本，而不是继续提供多个备选。</pre>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+<section class="slide light">
+    <div class="chrome"><div>高级构建 · 技巧 4</div><div>P1 · 14 / 41</div></div>
+    <div class="frame grid-2-7-5" style="padding-top:6vh">
+      <div class="col" style="justify-content:space-between;min-height:66vh" data-anim>
+        <div>
+          <div class="kicker">技巧 4 · 认知页</div>
+          <h2 class="h-xl" style="font-size:4.2vw">大任务分步推进</h2>
+          <p class="lead" style="font-size:1.55vw;margin-top:1.2vh">用步骤编排来提可控</p>
+        </div>
+        <div class="body-zh" style="font-size:1.08vw;line-height:1.8;max-width:42vw">
+          <p>把复杂任务拆成步骤，不是形式主义，而是复杂度管理。高级提示中常见失败是一次性要求“分析+决策+生成+校验”，模型会在不同子任务之间切换不稳定，导致遗漏和逻辑跳跃。步骤化可以把认知负担拆开：先定义问题，再分析数据，再给候选，再做取舍，再形成交付。每一步都可设置检查点，便于你在中途纠偏，而不是最后整体返工。建议步骤数控制在 4-7 步，过少不够细，过多增加噪声。步骤描述要可执行，例如“先列约束再给方案”，而不是“仔细想想”。对于跨部门项目、培训设计和策略产出，分步推进能显著提升可解释性与可控性。</p>
+        </div>
+      </div>
+      <figure class="tile" data-anim>
+        <div class="frame-img r-3x4 fit-contain" style="height:68vh;max-height:68vh;width:51vh;max-width:100%;margin-inline:auto">
+          <img src="images/3-5-大任务分步推进.jpg" alt="技巧4：大任务分步推进">
+        </div>
+      </figure>
+    </div>
+  </section>
+
+<section class="slide dark">
+    <div class="chrome"><div>高级构建 · 技巧 4</div><div>P2 · 15 / 41</div></div>
+    <div class="frame" style="padding-top:6vh">
+      <div class="kicker" data-anim>技巧 4 · 方法页</div>
+      <h2 class="h-xl" style="font-size:4vw" data-anim>大任务分步推进</h2>
+      <p class="lead" style="font-size:1.18vw;line-height:1.62;max-width:78vw;margin-top:1.4vh" data-anim>把复杂任务拆成步骤，不是形式主义，而是复杂度管理。高级提示中常见失败是一次性要求“分析+决策+生成+校验”，模型会在不同子任务之间切换不稳定，导致遗漏和逻辑跳跃。步骤化可以把认知负担拆开：先定义问题，再分析数据，再给候选，再做取舍，再形成交付。每一步都可设置检查点，便于你在中途纠偏，而不是最后整体返工。建议步骤数控制在 4-7 步，过少不够细，过多增加噪声。步骤描述要可执行，例如“先列约束再给方案”，而不是“仔细想想”。对于跨部门项目、培训设计和策略产出，分步推进能显著提升可解释性与可控性。</p>
+      <div class="grid-3" style="margin-top:5vh;align-items:start">
+        <div class="stat-card" data-anim>
+          <div class="stat-label">怎么做</div>
+          <div class="body-zh" style="font-size:1.02vw;line-height:1.8;opacity:.92">
+            <p>1）把复杂任务拆成步骤，不是形式主义，而是复杂度管理。</p>
+            <p>2）高级提示中常见失败是一次性要求“分析+决策+生成+校验”，模型会在不同子任务之间切换不稳定，导致遗漏和逻辑跳跃。</p>
+            <p>3）步骤化可以把认知负担拆开：先定义问题，再分析数据，再给候选，再做取舍，再形成交付。</p>
+          </div>
+        </div>
+        <div class="stat-card" data-anim>
+          <div class="stat-label">验收标准</div>
+          <div class="body-zh" style="font-size:1.02vw;line-height:1.8;opacity:.92">
+            <p>1）每一步都可设置检查点，便于你在中途纠偏，而不是最后整体返工。</p>
+            <p>2）建议步骤数控制在 4-7 步，过少不够细，过多增加噪声。</p>
+            <p>3）步骤描述要可执行，例如“先列约束再给方案”，而不是“仔细想想”。</p>
+            <p style="margin-top:1.4vh">输出需要可复用、可追溯、可执行。</p>
+          </div>
+        </div>
+        <div class="stat-card" data-anim>
+          <div class="stat-label">常见误区</div>
+          <div class="body-zh" style="font-size:1.02vw;line-height:1.8;opacity:.92">
+            <p>误区1：对于跨部门项目、培训设计和策略产出，分步推进能显著提升可解释性与可控性。</p>
+            <p>误区2：若信息不足先补充再执行。</p>
+            <p>修正：若信息不足先补充再执行。</p>
+            <p style="margin-top:1.4vh">口诀：先定边界，再控过程，最后再出结论。</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+<section class="slide light">
+    <div class="chrome"><div>高级构建 · 技巧 4</div><div>P3 · 16 / 41</div></div>
+    <div class="frame prompt-frame">
+      <div class="kicker" data-anim>技巧 4 · 错误与正确对照</div>
+      <h2 class="h-xl" style="font-size:3.7vw" data-anim>大任务分步推进</h2>
+      <div class="grid-3 prompt-grid">
+        <div class="col prompt-col" data-anim>
+          <div class="meta">示例 1</div>
+          <div class="callout prompt-card">
+            <div class="meta">错误提示词</div>
+            <pre class="prompt-pre">把这个事情从头到尾都做完，直接给最终版。</pre>
+          </div>
+          <div class="callout prompt-card">
+            <div class="meta">正确提示词</div>
+            <pre class="prompt-pre correct">## 任务背景
+我要制定一个跨部门项目推进方案，任务较复杂，不能直接给最终版。
+
+## 分步流程
+请按 5 步执行：
+1. 目标澄清
+2. 约束清单
+3. 方案备选
+4. 方案评估
+5. 最终定稿
+
+## 每步交付物
+每一步都先输出阶段结果，再进入下一步。
+
+## 暂停条件
+如果某一步信息不足，请先列出缺失信息和默认假设，不要跳过。
+
+## 最终输出
+请在完成前 4 步后，再给出最终方案和执行时间表。</pre>
+          </div>
+        </div><div class="col prompt-col" data-anim>
+          <div class="meta">示例 2</div>
+          <div class="callout prompt-card">
+            <div class="meta">错误提示词</div>
+            <pre class="prompt-pre">你自由发挥，完整一点。</pre>
+          </div>
+          <div class="callout prompt-card">
+            <div class="meta">正确提示词</div>
+            <pre class="prompt-pre correct">## 任务背景
+我要完成一份业务分析报告，需要你先搭建执行路径。
+
+## 步骤计划
+请先列出完整步骤，并说明每一步的交付物，例如：
+1. 输入信息整理
+2. 关键问题拆解
+3. 数据或证据分析
+4. 结论生成
+5. 建议与风险
+
+## 推进规则
+请按步骤逐步推进，每一步完成后再进入下一步。
+
+## 暂停条件
+如果某一步缺少信息，请输出：
+- 缺失项
+- 影响范围
+- 可采用的临时假设
+
+## 输出要求
+不要直接跳到结论。</pre>
+          </div>
+        </div><div class="col prompt-col" data-anim>
+          <div class="meta">示例 3</div>
+          <div class="callout prompt-card">
+            <div class="meta">错误提示词</div>
+            <pre class="prompt-pre">直接做结论。</pre>
+          </div>
+          <div class="callout prompt-card">
+            <div class="meta">正确提示词</div>
+            <pre class="prompt-pre correct">## 任务背景
+我要判断一个运营活动是否值得继续投入，需要你分步分析。
+
+## 分步流程
+请先完成输入分析，再形成结论：
+1. 整理已知数据
+2. 识别关键变化
+3. 分析可能原因
+4. 形成判断结论
+5. 给出行动建议
+
+## 依据要求
+每条结论都必须引用前一步的分析依据。
+
+## 暂停条件
+如果证据不足，请标注为“暂定判断”，并说明还需要什么信息。
+
+## 最终输出
+请给出结论、依据和下一步动作，不得无依据跳转。</pre>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+<section class="slide hero light">
+  <div class="chrome"><div>过程控制</div><div>Divider · 17 / 41</div></div>
+  <div class="frame" style="display:grid;gap:5vh;align-content:center;min-height:80vh">
+    <div class="kicker" data-anim>Act</div>
+    <h1 class="h-hero" style="font-size:8.5vw" data-anim>过程控制</h1>
+    <p class="lead" style="max-width:58vw" data-anim>先控过程，再控结果，提升稳定可复用。</p>
+  </div>
+  <div class="foot"><div>过程控制</div><div>—</div></div>
+</section>
+
+<section class="slide dark">
+    <div class="chrome"><div>过程控制 · 技巧 5</div><div>P1 · 18 / 41</div></div>
+    <div class="frame grid-2-7-5" style="padding-top:6vh">
+      <div class="col" style="justify-content:space-between;min-height:66vh" data-anim>
+        <div>
+          <div class="kicker">技巧 5 · 认知页</div>
+          <h2 class="h-xl" style="font-size:4.2vw">自动生成提示词</h2>
+          <p class="lead" style="font-size:1.55vw;margin-top:1.2vh">用元提示词技术来生成</p>
+        </div>
+        <div class="body-zh" style="font-size:1.08vw;line-height:1.8;max-width:42vw">
+          <p>当任务类型多、需求变化快时，手工写提示词效率会下降。元提示词技术的价值在于：先定义“好提示词的标准”，再让模型按标准生成具体提示词。你可以把目标、受众、输出格式、风险边界、评估标准写成元层规则，然后输入具体任务，让模型自动产出可执行提示词模板。这种方式能显著提升团队一致性，降低“不同人写法差异导致质量波动”。实操中建议要求模型同时输出：主提示词、可选变体、失败时修复提示、以及简短使用说明。这样不仅可直接用，还便于后续版本迭代。对企业内部规模化应用，这是从“会写”走向“会生产”的关键一步。</p>
+        </div>
+      </div>
+      <figure class="tile" data-anim>
+        <div class="frame-img r-3x4 fit-contain" style="height:68vh;max-height:68vh;width:51vh;max-width:100%;margin-inline:auto">
+          <img src="images/3-6-自动生成提示词.jpg" alt="技巧5：自动生成提示词">
+        </div>
+      </figure>
+    </div>
+  </section>
+
+<section class="slide light">
+    <div class="chrome"><div>过程控制 · 技巧 5</div><div>P2 · 19 / 41</div></div>
+    <div class="frame" style="padding-top:6vh">
+      <div class="kicker" data-anim>技巧 5 · 方法页</div>
+      <h2 class="h-xl" style="font-size:4vw" data-anim>自动生成提示词</h2>
+      <p class="lead" style="font-size:1.18vw;line-height:1.62;max-width:78vw;margin-top:1.4vh" data-anim>当任务类型多、需求变化快时，手工写提示词效率会下降。元提示词技术的价值在于：先定义“好提示词的标准”，再让模型按标准生成具体提示词。你可以把目标、受众、输出格式、风险边界、评估标准写成元层规则，然后输入具体任务，让模型自动产出可执行提示词模板。这种方式能显著提升团队一致性，降低“不同人写法差异导致质量波动”。实操中建议要求模型同时输出：主提示词、可选变体、失败时修复提示、以及简短使用说明。这样不仅可直接用，还便于后续版本迭代。对企业内部规模化应用，这是从“会写”走向“会生产”的关键一步。</p>
+      <div class="grid-3" style="margin-top:5vh;align-items:start">
+        <div class="stat-card" data-anim>
+          <div class="stat-label">怎么做</div>
+          <div class="body-zh" style="font-size:1.02vw;line-height:1.8;opacity:.92">
+            <p>1）当任务类型多、需求变化快时，手工写提示词效率会下降。</p>
+            <p>2）元提示词技术的价值在于：先定义“好提示词的标准”，再让模型按标准生成具体提示词。</p>
+            <p>3）你可以把目标、受众、输出格式、风险边界、评估标准写成元层规则，然后输入具体任务，让模型自动产出可执行提示词模板。</p>
+          </div>
+        </div>
+        <div class="stat-card" data-anim>
+          <div class="stat-label">验收标准</div>
+          <div class="body-zh" style="font-size:1.02vw;line-height:1.8;opacity:.92">
+            <p>1）这种方式能显著提升团队一致性，降低“不同人写法差异导致质量波动”。</p>
+            <p>2）实操中建议要求模型同时输出：主提示词、可选变体、失败时修复提示、以及简短使用说明。</p>
+            <p>3）这样不仅可直接用，还便于后续版本迭代。</p>
+            <p style="margin-top:1.4vh">输出需要可复用、可追溯、可执行。</p>
+          </div>
+        </div>
+        <div class="stat-card" data-anim>
+          <div class="stat-label">常见误区</div>
+          <div class="body-zh" style="font-size:1.02vw;line-height:1.8;opacity:.92">
+            <p>误区1：对企业内部规模化应用，这是从“会写”走向“会生产”的关键一步。</p>
+            <p>误区2：若信息不足先补充再执行。</p>
+            <p>修正：若信息不足先补充再执行。</p>
+            <p style="margin-top:1.4vh">口诀：先定边界，再控过程，最后再出结论。</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+<section class="slide light">
+    <div class="chrome"><div>过程控制 · 技巧 5</div><div>P3 · 20 / 41</div></div>
+    <div class="frame prompt-frame">
+      <div class="kicker" data-anim>技巧 5 · 错误与正确对照</div>
+      <h2 class="h-xl" style="font-size:3.7vw" data-anim>自动生成提示词</h2>
+      <div class="grid-3 prompt-grid">
+        <div class="col prompt-col" data-anim>
+          <div class="meta">示例 1</div>
+          <div class="callout prompt-card">
+            <div class="meta">错误提示词</div>
+            <pre class="prompt-pre">你帮我随便写个好用提示词。</pre>
+          </div>
+          <div class="callout prompt-card">
+            <div class="meta">正确提示词</div>
+            <pre class="prompt-pre correct">## 任务背景
+我要为团队沉淀一个“周报生成”提示词模板，供不同成员复用。
+
+## 提示词生成标准
+请按以下标准生成：
+1. 目标清晰
+2. 边界明确
+3. 输出结构固定
+4. 可验收
+
+## 输出要求
+请生成两版提示词：
+1. 短版：适合快速使用
+2. 严谨版：适合正式汇报
+
+## 使用说明
+每版提示词后请补充：
+- 适用场景
+- 需要替换的变量
+- 验收标准
+
+## 修复提示
+请额外给出当输出空泛时的修复提示词。</pre>
+          </div>
+        </div><div class="col prompt-col" data-anim>
+          <div class="meta">示例 2</div>
+          <div class="callout prompt-card">
+            <div class="meta">错误提示词</div>
+            <pre class="prompt-pre">生成提示词就行，不用解释。</pre>
+          </div>
+          <div class="callout prompt-card">
+            <div class="meta">正确提示词</div>
+            <pre class="prompt-pre correct">## 任务背景
+我要为“会议纪要整理”生成一条可复用提示词。
+
+## 生成要求
+请输出一条完整提示词，必须包含：
+1. 任务目标
+2. 输入材料说明
+3. 输出结构
+4. 禁止事项
+5. 验收标准
+
+## 适用场景
+请用 1 行说明这条提示词适合什么会议材料。
+
+## 常见失败点
+请用 1 行说明模型可能在哪些地方跑偏。
+
+## 修复提示
+请用 1 行给出失败后的补救提示词。</pre>
+          </div>
+        </div><div class="col prompt-col" data-anim>
+          <div class="meta">示例 3</div>
+          <div class="callout prompt-card">
+            <div class="meta">错误提示词</div>
+            <pre class="prompt-pre">写一个万能提示词。</pre>
+          </div>
+          <div class="callout prompt-card">
+            <div class="meta">正确提示词</div>
+            <pre class="prompt-pre correct">## 任务背景
+我要建立一组办公场景提示词，不需要所谓万能版本。
+
+## 场景拆分
+请分别生成 3 类提示词：
+1. 总结类：用于提炼材料重点
+2. 分析类：用于解释原因和影响
+3. 决策类：用于比较选项并给建议
+
+## 差异化约束
+每一类提示词都要标注：
+- 输入材料要求
+- 输出结构
+- 禁止事项
+- 验收方式
+
+## 输出要求
+请用表格对比三类提示词的差异，再分别给出可复制版本。
+
+## 修复提示
+每类都补充 1 条输出不理想时的修复提示。</pre>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+<section class="slide light">
+    <div class="chrome"><div>过程控制 · 技巧 6</div><div>P1 · 21 / 41</div></div>
+    <div class="frame grid-2-7-5" style="padding-top:6vh">
+      <div class="col" style="justify-content:space-between;min-height:66vh" data-anim>
+        <div>
+          <div class="kicker">技巧 6 · 认知页</div>
+          <h2 class="h-xl" style="font-size:4.2vw">反驳自己给反例</h2>
+          <p class="lead" style="font-size:1.55vw;margin-top:1.2vh">用逆向挑战来找漏洞</p>
+        </div>
+        <div class="body-zh" style="font-size:1.08vw;line-height:1.8;max-width:42vw">
+          <p>让模型“自我挑战”能有效暴露隐藏缺陷。模型默认倾向于顺着当前叙事给出连贯答案，但连贯不等于可靠。逆向提问的作用是打断单一路径：要求模型主动提出反对意见、失败场景、边界反例和替代解释。这样可以检验结论是否稳健，避免“看起来合理但经不起推敲”。建议把挑战分两步：先让模型站在反方攻击当前结论，再让其给出修复方案和条件限制。对于策略建议、风险判断、对外表达等高影响任务，这一步尤其关键。它能把“主观确信”转化为“结构化证伪”，从而提升结论可信度和决策质量。</p>
+        </div>
+      </div>
+      <figure class="tile" data-anim>
+        <div class="frame-img r-3x4 fit-contain" style="height:68vh;max-height:68vh;width:51vh;max-width:100%;margin-inline:auto">
+          <img src="images/3-7-反驳自己给反例.jpg" alt="技巧6：反驳自己给反例">
+        </div>
+      </figure>
+    </div>
+  </section>
+
+<section class="slide dark">
+    <div class="chrome"><div>过程控制 · 技巧 6</div><div>P2 · 22 / 41</div></div>
+    <div class="frame" style="padding-top:6vh">
+      <div class="kicker" data-anim>技巧 6 · 方法页</div>
+      <h2 class="h-xl" style="font-size:4vw" data-anim>反驳自己给反例</h2>
+      <p class="lead" style="font-size:1.18vw;line-height:1.62;max-width:78vw;margin-top:1.4vh" data-anim>让模型“自我挑战”能有效暴露隐藏缺陷。模型默认倾向于顺着当前叙事给出连贯答案，但连贯不等于可靠。逆向提问的作用是打断单一路径：要求模型主动提出反对意见、失败场景、边界反例和替代解释。这样可以检验结论是否稳健，避免“看起来合理但经不起推敲”。建议把挑战分两步：先让模型站在反方攻击当前结论，再让其给出修复方案和条件限制。对于策略建议、风险判断、对外表达等高影响任务，这一步尤其关键。它能把“主观确信”转化为“结构化证伪”，从而提升结论可信度和决策质量。</p>
+      <div class="grid-3" style="margin-top:5vh;align-items:start">
+        <div class="stat-card" data-anim>
+          <div class="stat-label">怎么做</div>
+          <div class="body-zh" style="font-size:1.02vw;line-height:1.8;opacity:.92">
+            <p>1）让模型“自我挑战”能有效暴露隐藏缺陷。</p>
+            <p>2）模型默认倾向于顺着当前叙事给出连贯答案，但连贯不等于可靠。</p>
+            <p>3）逆向提问的作用是打断单一路径：要求模型主动提出反对意见、失败场景、边界反例和替代解释。</p>
+          </div>
+        </div>
+        <div class="stat-card" data-anim>
+          <div class="stat-label">验收标准</div>
+          <div class="body-zh" style="font-size:1.02vw;line-height:1.8;opacity:.92">
+            <p>1）这样可以检验结论是否稳健，避免“看起来合理但经不起推敲”。</p>
+            <p>2）建议把挑战分两步：先让模型站在反方攻击当前结论，再让其给出修复方案和条件限制。</p>
+            <p>3）对于策略建议、风险判断、对外表达等高影响任务，这一步尤其关键。</p>
+            <p style="margin-top:1.4vh">输出需要可复用、可追溯、可执行。</p>
+          </div>
+        </div>
+        <div class="stat-card" data-anim>
+          <div class="stat-label">常见误区</div>
+          <div class="body-zh" style="font-size:1.02vw;line-height:1.8;opacity:.92">
+            <p>误区1：它能把“主观确信”转化为“结构化证伪”，从而提升结论可信度和决策质量。</p>
+            <p>误区2：若信息不足先补充再执行。</p>
+            <p>修正：若信息不足先补充再执行。</p>
+            <p style="margin-top:1.4vh">口诀：先定边界，再控过程，最后再出结论。</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+<section class="slide light">
+    <div class="chrome"><div>过程控制 · 技巧 6</div><div>P3 · 23 / 41</div></div>
+    <div class="frame prompt-frame">
+      <div class="kicker" data-anim>技巧 6 · 错误与正确对照</div>
+      <h2 class="h-xl" style="font-size:3.7vw" data-anim>反驳自己给反例</h2>
+      <div class="grid-3 prompt-grid">
+        <div class="col prompt-col" data-anim>
+          <div class="meta">示例 1</div>
+          <div class="callout prompt-card">
+            <div class="meta">错误提示词</div>
+            <pre class="prompt-pre">这个方案不错，你再润色一下。</pre>
+          </div>
+          <div class="callout prompt-card">
+            <div class="meta">正确提示词</div>
+            <pre class="prompt-pre correct">## 任务背景
+我有一个准备推进的方案，但需要先做逆向挑战，避免只看到优点。
+
+## 反方挑战
+请站在反方视角，列出该方案最可能失败的 5 个原因。
+
+## 反例场景
+每个失败原因都请补充：
+1. 一个具体反例场景
+2. 触发失败的条件
+3. 可能造成的影响
+
+## 修复建议
+请针对每个失败原因给出修复动作，并标注修复成本。
+
+## 最终判断
+完成挑战后，请说明该方案是否仍值得推进，以及需要满足哪些前提。</pre>
+          </div>
+        </div><div class="col prompt-col" data-anim>
+          <div class="meta">示例 2</div>
+          <div class="callout prompt-card">
+            <div class="meta">错误提示词</div>
+            <pre class="prompt-pre">只要支持这个结论的证据。</pre>
+          </div>
+          <div class="callout prompt-card">
+            <div class="meta">正确提示词</div>
+            <pre class="prompt-pre correct">## 任务背景
+我要评估一个业务结论是否可靠，不能只看支持材料。
+
+## 证据结构
+请同时输出：
+1. 支持该结论的证据
+2. 反对该结论的证据
+3. 尚未验证的假设
+
+## 反例要求
+请说明在什么条件下，这个结论会不成立。
+
+## 修复建议
+如果证据不足，请提出补充验证方式。
+
+## 输出格式
+请用“结论-支持证据-反对证据-失效条件-下一步验证”的结构输出。</pre>
+          </div>
+        </div><div class="col prompt-col" data-anim>
+          <div class="meta">示例 3</div>
+          <div class="callout prompt-card">
+            <div class="meta">错误提示词</div>
+            <pre class="prompt-pre">帮我证明这个方向是对的。</pre>
+          </div>
+          <div class="callout prompt-card">
+            <div class="meta">正确提示词</div>
+            <pre class="prompt-pre correct">## 任务背景
+我正在判断一个产品方向是否应该继续投入，需要先尝试推翻它。
+
+## 反方挑战
+请先列出该方向可能不成立的原因，而不是直接证明它正确。
+
+## 边界条件
+请说明该方向成立需要满足哪些前提。
+
+## 失败阈值
+请定义 3 个失败信号，例如成本、转化率、用户反馈或执行周期。
+
+## 替代路径
+请给出至少 2 条替代路径，并比较优劣。
+
+## 最终判断
+在完成反驳后，再说明是否仍推荐该方向。</pre>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+<section class="slide dark">
+    <div class="chrome"><div>过程控制 · 技巧 7</div><div>P1 · 24 / 41</div></div>
+    <div class="frame grid-2-7-5" style="padding-top:6vh">
+      <div class="col" style="justify-content:space-between;min-height:66vh" data-anim>
+        <div>
+          <div class="kicker">技巧 7 · 认知页</div>
+          <h2 class="h-xl" style="font-size:4.2vw">检查前后不矛盾</h2>
+          <p class="lead" style="font-size:1.55vw;margin-top:1.2vh">用一致性检验来纠偏</p>
+        </div>
+        <div class="body-zh" style="font-size:1.08vw;line-height:1.8;max-width:42vw">
+          <p>一致性检验是高级输出的底线能力。很多答案局部看都对，但整体前后冲突，比如前文主张降本，后文动作却显著增成本；前文强调风险控制，后文又给出高风险操作。要避免这种问题，需在生成后增加“自检回合”：要求模型列出关键结论、对应证据、潜在冲突点，并逐条校验是否一致。对多轮对话尤其重要，因为上下文累计后易出现概念漂移。建议要求模型给出“冲突清单=空”或“冲突清单+修复版本”，把质量控制显性化。该技巧可大幅减少你人工审稿时间，也能提升最终交付的可信度。</p>
+        </div>
+      </div>
+      <figure class="tile" data-anim>
+        <div class="frame-img r-3x4 fit-contain" style="height:68vh;max-height:68vh;width:51vh;max-width:100%;margin-inline:auto">
+          <img src="images/3-8-检查前后不矛盾.jpg" alt="技巧7：检查前后不矛盾">
+        </div>
+      </figure>
+    </div>
+  </section>
+
+<section class="slide light">
+    <div class="chrome"><div>过程控制 · 技巧 7</div><div>P2 · 25 / 41</div></div>
+    <div class="frame" style="padding-top:6vh">
+      <div class="kicker" data-anim>技巧 7 · 方法页</div>
+      <h2 class="h-xl" style="font-size:4vw" data-anim>检查前后不矛盾</h2>
+      <p class="lead" style="font-size:1.18vw;line-height:1.62;max-width:78vw;margin-top:1.4vh" data-anim>一致性检验是高级输出的底线能力。很多答案局部看都对，但整体前后冲突，比如前文主张降本，后文动作却显著增成本；前文强调风险控制，后文又给出高风险操作。要避免这种问题，需在生成后增加“自检回合”：要求模型列出关键结论、对应证据、潜在冲突点，并逐条校验是否一致。对多轮对话尤其重要，因为上下文累计后易出现概念漂移。建议要求模型给出“冲突清单=空”或“冲突清单+修复版本”，把质量控制显性化。该技巧可大幅减少你人工审稿时间，也能提升最终交付的可信度。</p>
+      <div class="grid-3" style="margin-top:5vh;align-items:start">
+        <div class="stat-card" data-anim>
+          <div class="stat-label">怎么做</div>
+          <div class="body-zh" style="font-size:1.02vw;line-height:1.8;opacity:.92">
+            <p>1）一致性检验是高级输出的底线能力。</p>
+            <p>2）很多答案局部看都对，但整体前后冲突，比如前文主张降本，后文动作却显著增成本；</p>
+            <p>3）前文强调风险控制，后文又给出高风险操作。</p>
+          </div>
+        </div>
+        <div class="stat-card" data-anim>
+          <div class="stat-label">验收标准</div>
+          <div class="body-zh" style="font-size:1.02vw;line-height:1.8;opacity:.92">
+            <p>1）要避免这种问题，需在生成后增加“自检回合”：要求模型列出关键结论、对应证据、潜在冲突点，并逐条校验是否一致。</p>
+            <p>2）对多轮对话尤其重要，因为上下文累计后易出现概念漂移。</p>
+            <p>3）建议要求模型给出“冲突清单=空”或“冲突清单+修复版本”，把质量控制显性化。</p>
+            <p style="margin-top:1.4vh">输出需要可复用、可追溯、可执行。</p>
+          </div>
+        </div>
+        <div class="stat-card" data-anim>
+          <div class="stat-label">常见误区</div>
+          <div class="body-zh" style="font-size:1.02vw;line-height:1.8;opacity:.92">
+            <p>误区1：该技巧可大幅减少你人工审稿时间，也能提升最终交付的可信度。</p>
+            <p>误区2：若信息不足先补充再执行。</p>
+            <p>修正：若信息不足先补充再执行。</p>
+            <p style="margin-top:1.4vh">口诀：先定边界，再控过程，最后再出结论。</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+<section class="slide light">
+    <div class="chrome"><div>过程控制 · 技巧 7</div><div>P3 · 26 / 41</div></div>
+    <div class="frame prompt-frame">
+      <div class="kicker" data-anim>技巧 7 · 错误与正确对照</div>
+      <h2 class="h-xl" style="font-size:3.7vw" data-anim>检查前后不矛盾</h2>
+      <div class="grid-3 prompt-grid">
+        <div class="col prompt-col" data-anim>
+          <div class="meta">示例 1</div>
+          <div class="callout prompt-card">
+            <div class="meta">错误提示词</div>
+            <pre class="prompt-pre">写完就行，不用检查。</pre>
+          </div>
+          <div class="callout prompt-card">
+            <div class="meta">正确提示词</div>
+            <pre class="prompt-pre correct">## 任务背景
+我要生成一份项目复盘，但需要在输出后检查前后是否矛盾。
+
+## 生成要求
+请先完成复盘正文，再追加一致性检查区。
+
+## 一致性检查
+请列出 5 条核心结论，并逐条检查：
+1. 对应证据
+2. 是否与前文冲突
+3. 是否与数据口径一致
+4. 是否需要修订
+
+## 冲突清单
+如果没有冲突，请写“冲突清单：空”。
+如果存在冲突，请列出冲突位置和原因。
+
+## 修订要求
+对存在冲突的内容，请给出修订版。</pre>
+          </div>
+        </div><div class="col prompt-col" data-anim>
+          <div class="meta">示例 2</div>
+          <div class="callout prompt-card">
+            <div class="meta">错误提示词</div>
+            <pre class="prompt-pre">越快越好，先给结果。</pre>
+          </div>
+          <div class="callout prompt-card">
+            <div class="meta">正确提示词</div>
+            <pre class="prompt-pre correct">## 任务背景
+我要快速生成一份业务说明，但不能只追求速度，还要保留自检。
+
+## 输出要求
+请先给出业务说明正文。
+
+## 自检区
+正文之后追加 3 项自检：
+1. 术语一致性：检查同一概念是否前后叫法一致
+2. 数据一致性：检查数字、时间、范围是否冲突
+3. 结论一致性：检查结论是否与前文依据匹配
+
+## 修订要求
+如果发现不一致，请直接给出修订后的表达。
+
+## 验收标准
+自检区必须简短，但不能省略。</pre>
+          </div>
+        </div><div class="col prompt-col" data-anim>
+          <div class="meta">示例 3</div>
+          <div class="callout prompt-card">
+            <div class="meta">错误提示词</div>
+            <pre class="prompt-pre">不用管细节，方向对就行。</pre>
+          </div>
+          <div class="callout prompt-card">
+            <div class="meta">正确提示词</div>
+            <pre class="prompt-pre correct">## 任务背景
+我要检查一份行动方案，重点看目标和动作是否前后一致。
+
+## 检查范围
+请检查以下三类一致性：
+1. 目标与动作是否匹配
+2. 风险判断与执行建议是否匹配
+3. 资源约束与计划强度是否匹配
+
+## 冲突清单
+如果发现“目标-动作”不匹配，请列出冲突点。
+
+## 修订要求
+请保留目标不变，重写不匹配的动作部分。
+
+## 输出格式
+请输出“冲突点-原因-修订动作”。</pre>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+<section class="slide light">
+    <div class="chrome"><div>过程控制 · 技巧 8</div><div>P1 · 27 / 41</div></div>
+    <div class="frame grid-2-7-5" style="padding-top:6vh">
+      <div class="col" style="justify-content:space-between;min-height:66vh" data-anim>
+        <div>
+          <div class="kicker">技巧 8 · 认知页</div>
+          <h2 class="h-xl" style="font-size:4.2vw">检查因果成闭环</h2>
+          <p class="lead" style="font-size:1.55vw;margin-top:1.2vh">用因果链路来验深度</p>
+        </div>
+        <div class="body-zh" style="font-size:1.08vw;line-height:1.8;max-width:42vw">
+          <p>高质量答案不仅要“说了什么”，还要说明“为什么成立”。因果闭环检查就是要求模型把结论背后的逻辑链完整展开：前提是什么、作用机制是什么、中间变量如何变化、最终结果如何产生、在何条件下失效。没有因果链，答案往往停留在经验口号；有因果链，答案才具备可解释性和可迁移性。实操中可要求模型用“前提-机制-结果-边界”四段式表达，并补充可观测指标。这样你能判断建议是否可验证，而不是只凭语言流畅度判断好坏。对策略、教学、产品决策类输出，这个技巧能显著提升深度与说服力。</p>
+        </div>
+      </div>
+      <figure class="tile" data-anim>
+        <div class="frame-img r-3x4 fit-contain" style="height:68vh;max-height:68vh;width:51vh;max-width:100%;margin-inline:auto">
+          <img src="images/3-9-检查因果成闭环.jpg" alt="技巧8：检查因果成闭环">
+        </div>
+      </figure>
+    </div>
+  </section>
+
+<section class="slide dark">
+    <div class="chrome"><div>过程控制 · 技巧 8</div><div>P2 · 28 / 41</div></div>
+    <div class="frame" style="padding-top:6vh">
+      <div class="kicker" data-anim>技巧 8 · 方法页</div>
+      <h2 class="h-xl" style="font-size:4vw" data-anim>检查因果成闭环</h2>
+      <p class="lead" style="font-size:1.18vw;line-height:1.62;max-width:78vw;margin-top:1.4vh" data-anim>高质量答案不仅要“说了什么”，还要说明“为什么成立”。因果闭环检查就是要求模型把结论背后的逻辑链完整展开：前提是什么、作用机制是什么、中间变量如何变化、最终结果如何产生、在何条件下失效。没有因果链，答案往往停留在经验口号；有因果链，答案才具备可解释性和可迁移性。实操中可要求模型用“前提-机制-结果-边界”四段式表达，并补充可观测指标。这样你能判断建议是否可验证，而不是只凭语言流畅度判断好坏。对策略、教学、产品决策类输出，这个技巧能显著提升深度与说服力。</p>
+      <div class="grid-3" style="margin-top:5vh;align-items:start">
+        <div class="stat-card" data-anim>
+          <div class="stat-label">怎么做</div>
+          <div class="body-zh" style="font-size:1.02vw;line-height:1.8;opacity:.92">
+            <p>1）高质量答案不仅要“说了什么”，还要说明“为什么成立”。</p>
+            <p>2）因果闭环检查就是要求模型把结论背后的逻辑链完整展开：前提是什么、作用机制是什么、中间变量如何变化、最终结果如何产生、在何条件下失效。</p>
+            <p>3）没有因果链，答案往往停留在经验口号；</p>
+          </div>
+        </div>
+        <div class="stat-card" data-anim>
+          <div class="stat-label">验收标准</div>
+          <div class="body-zh" style="font-size:1.02vw;line-height:1.8;opacity:.92">
+            <p>1）有因果链，答案才具备可解释性和可迁移性。</p>
+            <p>2）实操中可要求模型用“前提-机制-结果-边界”四段式表达，并补充可观测指标。</p>
+            <p>3）这样你能判断建议是否可验证，而不是只凭语言流畅度判断好坏。</p>
+            <p style="margin-top:1.4vh">输出需要可复用、可追溯、可执行。</p>
+          </div>
+        </div>
+        <div class="stat-card" data-anim>
+          <div class="stat-label">常见误区</div>
+          <div class="body-zh" style="font-size:1.02vw;line-height:1.8;opacity:.92">
+            <p>误区1：对策略、教学、产品决策类输出，这个技巧能显著提升深度与说服力。</p>
+            <p>误区2：若信息不足先补充再执行。</p>
+            <p>修正：若信息不足先补充再执行。</p>
+            <p style="margin-top:1.4vh">口诀：先定边界，再控过程，最后再出结论。</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+<section class="slide light">
+    <div class="chrome"><div>过程控制 · 技巧 8</div><div>P3 · 29 / 41</div></div>
+    <div class="frame prompt-frame">
+      <div class="kicker" data-anim>技巧 8 · 错误与正确对照</div>
+      <h2 class="h-xl" style="font-size:3.7vw" data-anim>检查因果成闭环</h2>
+      <div class="grid-3 prompt-grid">
+        <div class="col prompt-col" data-anim>
+          <div class="meta">示例 1</div>
+          <div class="callout prompt-card">
+            <div class="meta">错误提示词</div>
+            <pre class="prompt-pre">告诉我这个方法为什么好。</pre>
+          </div>
+          <div class="callout prompt-card">
+            <div class="meta">正确提示词</div>
+            <pre class="prompt-pre correct">## 任务背景
+我要判断一个方法为什么有效，不能只要结论。
+
+## 因果链结构
+请按以下结构解释：
+1. 前提：该方法成立需要什么条件
+2. 机制：它通过什么过程发挥作用
+3. 结果：它预计带来什么变化
+4. 边界：在什么情况下会失效
+
+## 验证指标
+请给出 3 个可观测指标，用来判断因果链是否成立。
+
+## 输出要求
+不要只给口号，每一条机制都要能被观察或验证。</pre>
+          </div>
+        </div><div class="col prompt-col" data-anim>
+          <div class="meta">示例 2</div>
+          <div class="callout prompt-card">
+            <div class="meta">错误提示词</div>
+            <pre class="prompt-pre">给结论，不要过程。</pre>
+          </div>
+          <div class="callout prompt-card">
+            <div class="meta">正确提示词</div>
+            <pre class="prompt-pre correct">## 任务背景
+我要生成一组业务结论，但每条结论都需要解释为什么成立。
+
+## 输出结构
+请按条目输出，每条包含：
+1. 结论
+2. 前提条件
+3. 作用机制
+4. 预期结果
+5. 失效条件
+
+## 边界要求
+如果某条结论只在特定场景成立，请明确标注适用边界。
+
+## 验证方式
+请为每条结论补充至少 1 个可观测指标。
+
+## 禁止事项
+不要只给结论，不要用“显然”“通常来说”替代因果说明。</pre>
+          </div>
+        </div><div class="col prompt-col" data-anim>
+          <div class="meta">示例 3</div>
+          <div class="callout prompt-card">
+            <div class="meta">错误提示词</div>
+            <pre class="prompt-pre">写得有说服力一点。</pre>
+          </div>
+          <div class="callout prompt-card">
+            <div class="meta">正确提示词</div>
+            <pre class="prompt-pre correct">## 任务背景
+我要把一段观点写得有说服力，但说服力必须来自因果闭环，而不是修辞。
+
+## 主张拆解
+请把每条主张拆成：
+1. 前提条件
+2. 作用机制
+3. 预期结果
+4. 可验证证据
+
+## 边界说明
+请说明每条主张在哪些条件下不成立。
+
+## 输出要求
+请用表格呈现“主张-前提-机制-证据-边界”。
+
+## 禁止事项
+不得只给口号，不得用权威口吻替代证据。</pre>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+<section class="slide hero dark">
+  <div class="chrome"><div>质量治理</div><div>Divider · 30 / 41</div></div>
+  <div class="frame" style="display:grid;gap:5vh;align-content:center;min-height:80vh">
+    <div class="kicker" data-anim>Act</div>
+    <h1 class="h-hero" style="font-size:8.5vw" data-anim>质量治理</h1>
+    <p class="lead" style="max-width:58vw" data-anim>把可验证、可追溯、可交接做成默认能力。</p>
+  </div>
+  <div class="foot"><div>质量治理</div><div>—</div></div>
+</section>
+
+<section class="slide dark">
+    <div class="chrome"><div>质量治理 · 技巧 9</div><div>P1 · 31 / 41</div></div>
+    <div class="frame grid-2-7-5" style="padding-top:6vh">
+      <div class="col" style="justify-content:space-between;min-height:66vh" data-anim>
+        <div>
+          <div class="kicker">技巧 9 · 认知页</div>
+          <h2 class="h-xl" style="font-size:4.2vw">检查结论可验证</h2>
+          <p class="lead" style="font-size:1.55vw;margin-top:1.2vh">用证据追溯来防空谈</p>
+        </div>
+        <div class="body-zh" style="font-size:1.08vw;line-height:1.8;max-width:42vw">
+          <p>可验证性决定输出是否能用于决策。很多回答逻辑通顺，但无法追溯来源、无法量化验证、无法复现实验，这类内容在业务场景价值有限。提示词中应明确要求“每个关键结论都附证据类型和验证方式”，证据可以是数据、文档、规则、历史案例、可观测指标。若无证据，也要明确标注为假设而非事实。建议模型输出“结论-证据-验证动作”三联结构，便于执行与复盘。该技巧可避免“看似专业的空话”，尤其适用于汇报材料、策略建议、流程改造和培训结论。证据追溯越清晰，团队信任与决策效率越高。</p>
+        </div>
+      </div>
+      <figure class="tile" data-anim>
+        <div class="frame-img r-3x4 fit-contain" style="height:68vh;max-height:68vh;width:51vh;max-width:100%;margin-inline:auto">
+          <img src="images/3-10-检查结论可验证.jpg" alt="技巧9：检查结论可验证">
+        </div>
+      </figure>
+    </div>
+  </section>
+
+<section class="slide light">
+    <div class="chrome"><div>质量治理 · 技巧 9</div><div>P2 · 32 / 41</div></div>
+    <div class="frame" style="padding-top:6vh">
+      <div class="kicker" data-anim>技巧 9 · 方法页</div>
+      <h2 class="h-xl" style="font-size:4vw" data-anim>检查结论可验证</h2>
+      <p class="lead" style="font-size:1.18vw;line-height:1.62;max-width:78vw;margin-top:1.4vh" data-anim>可验证性决定输出是否能用于决策。很多回答逻辑通顺，但无法追溯来源、无法量化验证、无法复现实验，这类内容在业务场景价值有限。提示词中应明确要求“每个关键结论都附证据类型和验证方式”，证据可以是数据、文档、规则、历史案例、可观测指标。若无证据，也要明确标注为假设而非事实。建议模型输出“结论-证据-验证动作”三联结构，便于执行与复盘。该技巧可避免“看似专业的空话”，尤其适用于汇报材料、策略建议、流程改造和培训结论。证据追溯越清晰，团队信任与决策效率越高。</p>
+      <div class="grid-3" style="margin-top:5vh;align-items:start">
+        <div class="stat-card" data-anim>
+          <div class="stat-label">怎么做</div>
+          <div class="body-zh" style="font-size:1.02vw;line-height:1.8;opacity:.92">
+            <p>1）可验证性决定输出是否能用于决策。</p>
+            <p>2）很多回答逻辑通顺，但无法追溯来源、无法量化验证、无法复现实验，这类内容在业务场景价值有限。</p>
+            <p>3）提示词中应明确要求“每个关键结论都附证据类型和验证方式”，证据可以是数据、文档、规则、历史案例、可观测指标。</p>
+          </div>
+        </div>
+        <div class="stat-card" data-anim>
+          <div class="stat-label">验收标准</div>
+          <div class="body-zh" style="font-size:1.02vw;line-height:1.8;opacity:.92">
+            <p>1）若无证据，也要明确标注为假设而非事实。</p>
+            <p>2）建议模型输出“结论-证据-验证动作”三联结构，便于执行与复盘。</p>
+            <p>3）该技巧可避免“看似专业的空话”，尤其适用于汇报材料、策略建议、流程改造和培训结论。</p>
+            <p style="margin-top:1.4vh">输出需要可复用、可追溯、可执行。</p>
+          </div>
+        </div>
+        <div class="stat-card" data-anim>
+          <div class="stat-label">常见误区</div>
+          <div class="body-zh" style="font-size:1.02vw;line-height:1.8;opacity:.92">
+            <p>误区1：证据追溯越清晰，团队信任与决策效率越高。</p>
+            <p>误区2：若信息不足先补充再执行。</p>
+            <p>修正：若信息不足先补充再执行。</p>
+            <p style="margin-top:1.4vh">口诀：先定边界，再控过程，最后再出结论。</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+<section class="slide light">
+    <div class="chrome"><div>质量治理 · 技巧 9</div><div>P3 · 33 / 41</div></div>
+    <div class="frame prompt-frame">
+      <div class="kicker" data-anim>技巧 9 · 错误与正确对照</div>
+      <h2 class="h-xl" style="font-size:3.7vw" data-anim>检查结论可验证</h2>
+      <div class="grid-3 prompt-grid">
+        <div class="col prompt-col" data-anim>
+          <div class="meta">示例 1</div>
+          <div class="callout prompt-card">
+            <div class="meta">错误提示词</div>
+            <pre class="prompt-pre">给我一个有说服力的结论。</pre>
+          </div>
+          <div class="callout prompt-card">
+            <div class="meta">正确提示词</div>
+            <pre class="prompt-pre correct">## 任务背景
+我要形成一组决策结论，但每条结论都必须可验证。
+
+## 输出结构
+请按以下格式输出每条结论：
+1. 结论
+2. 证据来源类型
+3. 当前证据内容
+4. 验证方法
+5. 补证建议
+
+## 假设标注
+如果证据不足，请明确标注为“假设”，不要写成事实。
+
+## 验证动作
+请说明每条结论可以如何被数据、文档、访谈或实验验证。
+
+## 禁止事项
+不要给无法追溯来源的判断。</pre>
+          </div>
+        </div><div class="col prompt-col" data-anim>
+          <div class="meta">示例 2</div>
+          <div class="callout prompt-card">
+            <div class="meta">错误提示词</div>
+            <pre class="prompt-pre">写得像专家就行。</pre>
+          </div>
+          <div class="callout prompt-card">
+            <div class="meta">正确提示词</div>
+            <pre class="prompt-pre correct">## 任务背景
+我要写一份策略建议，但不能用专家口吻代替证据。
+
+## 输出结构
+请使用“结论-依据-验证动作”的结构。
+
+## 证据要求
+每条结论都需要说明依据来自哪里，例如：
+- 已有数据
+- 用户反馈
+- 业务规则
+- 历史案例
+- 可观测指标
+
+## 验证动作
+请为每条结论设计一个两周内可执行的验证动作。
+
+## 指标要求
+请标出对应指标、观察周期和成功标准。
+
+## 假设标注
+证据不足的内容请放入“待验证假设”区。</pre>
+          </div>
+        </div><div class="col prompt-col" data-anim>
+          <div class="meta">示例 3</div>
+          <div class="callout prompt-card">
+            <div class="meta">错误提示词</div>
+            <pre class="prompt-pre">不用引用，直接判断。</pre>
+          </div>
+          <div class="callout prompt-card">
+            <div class="meta">正确提示词</div>
+            <pre class="prompt-pre correct">## 任务背景
+我要根据一组材料做判断，需要避免无依据结论。
+
+## 判断规则
+所有关键判断都必须指向：
+1. 已给材料中的具体信息
+2. 明确的可测指标
+3. 可复查的业务规则
+
+## 输出结构
+请输出：
+- 关键判断
+- 对应依据
+- 可验证指标
+- 验证方法
+
+## 假设区
+无法验证的内容请单独列入“假设区”，不要混在结论里。
+
+## 禁止事项
+不要直接判断，不要省略依据。</pre>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+<section class="slide light">
+    <div class="chrome"><div>质量治理 · 技巧 10</div><div>P1 · 34 / 41</div></div>
+    <div class="frame grid-2-7-5" style="padding-top:6vh">
+      <div class="col" style="justify-content:space-between;min-height:66vh" data-anim>
+        <div>
+          <div class="kicker">技巧 10 · 认知页</div>
+          <h2 class="h-xl" style="font-size:4.2vw">关键信息要落盘</h2>
+          <p class="lead" style="font-size:1.55vw;margin-top:1.2vh">用本地持久来抗遗忘</p>
+        </div>
+        <div class="body-zh" style="font-size:1.08vw;line-height:1.8;max-width:42vw">
+          <p>多轮对话中，信息漂移和遗忘是客观存在的。高级提示工程不能只依赖会话记忆，应在关键节点把稳定信息写入本地文件，形成可复用、可审计、可交接的“外部记忆”。适合落盘的内容包括：已确认目标、约束边界、模板版本、评测结果、待办清单、决策依据。实践上可在每个阶段结束时固定输出“阶段结论块”，并同步到本地文档。这样下一轮任务可以直接引用，避免重复对齐。这个原则本质上是把一次性对话升级为可持续流程：持久化优先于内存化，结构化优先于临场记忆。对于团队协作与长期项目，价值非常高。</p>
+        </div>
+      </div>
+      <figure class="tile" data-anim>
+        <div class="frame-img r-3x4 fit-contain" style="height:68vh;max-height:68vh;width:51vh;max-width:100%;margin-inline:auto">
+          <img src="images/3-11-关键信息要落盘.jpg" alt="技巧10：关键信息要落盘">
+        </div>
+      </figure>
+    </div>
+  </section>
+
+<section class="slide dark">
+    <div class="chrome"><div>质量治理 · 技巧 10</div><div>P2 · 35 / 41</div></div>
+    <div class="frame" style="padding-top:6vh">
+      <div class="kicker" data-anim>技巧 10 · 方法页</div>
+      <h2 class="h-xl" style="font-size:4vw" data-anim>关键信息要落盘</h2>
+      <p class="lead" style="font-size:1.18vw;line-height:1.62;max-width:78vw;margin-top:1.4vh" data-anim>多轮对话中，信息漂移和遗忘是客观存在的。高级提示工程不能只依赖会话记忆，应在关键节点把稳定信息写入本地文件，形成可复用、可审计、可交接的“外部记忆”。适合落盘的内容包括：已确认目标、约束边界、模板版本、评测结果、待办清单、决策依据。实践上可在每个阶段结束时固定输出“阶段结论块”，并同步到本地文档。这样下一轮任务可以直接引用，避免重复对齐。这个原则本质上是把一次性对话升级为可持续流程：持久化优先于内存化，结构化优先于临场记忆。对于团队协作与长期项目，价值非常高。</p>
+      <div class="grid-3" style="margin-top:5vh;align-items:start">
+        <div class="stat-card" data-anim>
+          <div class="stat-label">怎么做</div>
+          <div class="body-zh" style="font-size:1.02vw;line-height:1.8;opacity:.92">
+            <p>1）多轮对话中，信息漂移和遗忘是客观存在的。</p>
+            <p>2）高级提示工程不能只依赖会话记忆，应在关键节点把稳定信息写入本地文件，形成可复用、可审计、可交接的“外部记忆”。</p>
+            <p>3）适合落盘的内容包括：已确认目标、约束边界、模板版本、评测结果、待办清单、决策依据。</p>
+          </div>
+        </div>
+        <div class="stat-card" data-anim>
+          <div class="stat-label">验收标准</div>
+          <div class="body-zh" style="font-size:1.02vw;line-height:1.8;opacity:.92">
+            <p>1）实践上可在每个阶段结束时固定输出“阶段结论块”，并同步到本地文档。</p>
+            <p>2）这样下一轮任务可以直接引用，避免重复对齐。</p>
+            <p>3）这个原则本质上是把一次性对话升级为可持续流程：持久化优先于内存化，结构化优先于临场记忆。</p>
+            <p style="margin-top:1.4vh">输出需要可复用、可追溯、可执行。</p>
+          </div>
+        </div>
+        <div class="stat-card" data-anim>
+          <div class="stat-label">常见误区</div>
+          <div class="body-zh" style="font-size:1.02vw;line-height:1.8;opacity:.92">
+            <p>误区1：对于团队协作与长期项目，价值非常高。</p>
+            <p>误区2：若信息不足先补充再执行。</p>
+            <p>修正：若信息不足先补充再执行。</p>
+            <p style="margin-top:1.4vh">口诀：先定边界，再控过程，最后再出结论。</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+<section class="slide light">
+    <div class="chrome"><div>质量治理 · 技巧 10</div><div>P3 · 36 / 41</div></div>
+    <div class="frame prompt-frame">
+      <div class="kicker" data-anim>技巧 10 · 错误与正确对照</div>
+      <h2 class="h-xl" style="font-size:3.7vw" data-anim>关键信息要落盘</h2>
+      <div class="grid-3 prompt-grid">
+        <div class="col prompt-col" data-anim>
+          <div class="meta">示例 1</div>
+          <div class="callout prompt-card">
+            <div class="meta">错误提示词</div>
+            <pre class="prompt-pre">你记住刚才说的就行，后面继续。</pre>
+          </div>
+          <div class="callout prompt-card">
+            <div class="meta">正确提示词</div>
+            <pre class="prompt-pre correct">## 任务背景
+我们正在进行多轮协作，本轮结束前需要把关键信息落盘，避免后续遗忘或口径漂移。
+
+## 阶段记录
+请整理本轮已经确认的信息，包括：
+1. 目标
+2. 约束
+3. 模板版本
+4. 决策依据
+5. 待办事项
+
+## 输出格式
+请用 Markdown 输出“阶段记录”，并保持编号，便于后续直接引用。
+
+## 待确认事项
+请单独列出仍未确认的问题。
+
+## 使用方式
+下一轮任务开始时，请优先引用这份阶段记录。</pre>
+          </div>
+        </div><div class="col prompt-col" data-anim>
+          <div class="meta">示例 2</div>
+          <div class="callout prompt-card">
+            <div class="meta">错误提示词</div>
+            <pre class="prompt-pre">先聊，文档以后再说。</pre>
+          </div>
+          <div class="callout prompt-card">
+            <div class="meta">正确提示词</div>
+            <pre class="prompt-pre correct">## 任务背景
+我们正在连续迭代一个项目，需要每轮结束时形成稳定记录。
+
+## 输出结构
+请在本轮结束时输出：
+1. 已确认事项
+2. 待确认事项
+3. 下一步动作
+
+## 编号规则
+请保持连续编号，便于写入本地文档和后续引用。
+
+## 下一步动作
+每个动作需包含负责人、输入材料和完成标准。
+
+## 版本留痕
+如果本轮改变了旧结论，请说明变更原因。</pre>
+          </div>
+        </div><div class="col prompt-col" data-anim>
+          <div class="meta">示例 3</div>
+          <div class="callout prompt-card">
+            <div class="meta">错误提示词</div>
+            <pre class="prompt-pre">不用留痕，直接迭代。</pre>
+          </div>
+          <div class="callout prompt-card">
+            <div class="meta">正确提示词</div>
+            <pre class="prompt-pre correct">## 任务背景
+我们正在多轮修改同一份材料，需要保留每次关键修改的原因。
+
+## 版本留痕
+请为本次修改生成记录，包含：
+1. 版本号
+2. 修改内容
+3. 修改理由
+4. 影响范围
+5. 是否需要同步给他人
+
+## 阶段记录
+请把最终确认的信息整理成可复制的 Markdown 记录。
+
+## 待确认事项
+如果有未决问题，请单独列出。
+
+## 禁止事项
+不要只给最终稿而不说明变更理由。</pre>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+<section class="slide dark">
+    <div class="chrome"><div>质量治理 · 技巧 11</div><div>P1 · 37 / 41</div></div>
+    <div class="frame grid-2-7-5" style="padding-top:6vh">
+      <div class="col" style="justify-content:space-between;min-height:66vh" data-anim>
+        <div>
+          <div class="kicker">技巧 11 · 认知页</div>
+          <h2 class="h-xl" style="font-size:4.2vw">多语检索单语出</h2>
+          <p class="lead" style="font-size:1.55vw;margin-top:1.2vh">用双语术语来保准确</p>
+        </div>
+        <div class="body-zh" style="font-size:1.08vw;line-height:1.8;max-width:42vw">
+          <p>多语种混合模式的目标不是炫技，而是兼顾信息覆盖与输出一致。很多前沿资料以英文为主，若只限单语检索可能遗漏关键观点；但若输出语言不锁定，结果容易混杂、可读性下降。正确做法是：检索与推理可多语种，最终输出强制单语（如中文），并对关键术语采用“英文原词+中文释义”双语对齐。这样既保留专业精度，也保证团队可读。提示词中要明确三件事：检索语言范围、最终输出语言、术语呈现规则。对课程开发、技术研究、行业分析等任务，这个策略能明显提升信息质量与传播效率。</p>
+        </div>
+      </div>
+      <figure class="tile" data-anim>
+        <div class="frame-img r-3x4 fit-contain" style="height:68vh;max-height:68vh;width:51vh;max-width:100%;margin-inline:auto">
+          <img src="images/3-12-多语检索单语出.jpg" alt="技巧11：多语检索单语出">
+        </div>
+      </figure>
+    </div>
+  </section>
+
+<section class="slide light">
+    <div class="chrome"><div>质量治理 · 技巧 11</div><div>P2 · 38 / 41</div></div>
+    <div class="frame" style="padding-top:6vh">
+      <div class="kicker" data-anim>技巧 11 · 方法页</div>
+      <h2 class="h-xl" style="font-size:4vw" data-anim>多语检索单语出</h2>
+      <p class="lead" style="font-size:1.18vw;line-height:1.62;max-width:78vw;margin-top:1.4vh" data-anim>多语种混合模式的目标不是炫技，而是兼顾信息覆盖与输出一致。很多前沿资料以英文为主，若只限单语检索可能遗漏关键观点；但若输出语言不锁定，结果容易混杂、可读性下降。正确做法是：检索与推理可多语种，最终输出强制单语（如中文），并对关键术语采用“英文原词+中文释义”双语对齐。这样既保留专业精度，也保证团队可读。提示词中要明确三件事：检索语言范围、最终输出语言、术语呈现规则。对课程开发、技术研究、行业分析等任务，这个策略能明显提升信息质量与传播效率。</p>
+      <div class="grid-3" style="margin-top:5vh;align-items:start">
+        <div class="stat-card" data-anim>
+          <div class="stat-label">怎么做</div>
+          <div class="body-zh" style="font-size:1.02vw;line-height:1.8;opacity:.92">
+            <p>1）多语种混合模式的目标不是炫技，而是兼顾信息覆盖与输出一致。</p>
+            <p>2）很多前沿资料以英文为主，若只限单语检索可能遗漏关键观点；</p>
+            <p>3）但若输出语言不锁定，结果容易混杂、可读性下降。</p>
+          </div>
+        </div>
+        <div class="stat-card" data-anim>
+          <div class="stat-label">验收标准</div>
+          <div class="body-zh" style="font-size:1.02vw;line-height:1.8;opacity:.92">
+            <p>1）正确做法是：检索与推理可多语种，最终输出强制单语（如中文），并对关键术语采用“英文原词+中文释义”双语对齐。</p>
+            <p>2）这样既保留专业精度，也保证团队可读。</p>
+            <p>3）提示词中要明确三件事：检索语言范围、最终输出语言、术语呈现规则。</p>
+            <p style="margin-top:1.4vh">输出需要可复用、可追溯、可执行。</p>
+          </div>
+        </div>
+        <div class="stat-card" data-anim>
+          <div class="stat-label">常见误区</div>
+          <div class="body-zh" style="font-size:1.02vw;line-height:1.8;opacity:.92">
+            <p>误区1：对课程开发、技术研究、行业分析等任务，这个策略能明显提升信息质量与传播效率。</p>
+            <p>误区2：若信息不足先补充再执行。</p>
+            <p>修正：若信息不足先补充再执行。</p>
+            <p style="margin-top:1.4vh">口诀：先定边界，再控过程，最后再出结论。</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+<section class="slide light">
+    <div class="chrome"><div>质量治理 · 技巧 11</div><div>P3 · 39 / 41</div></div>
+    <div class="frame prompt-frame">
+      <div class="kicker" data-anim>技巧 11 · 错误与正确对照</div>
+      <h2 class="h-xl" style="font-size:3.7vw" data-anim>多语检索单语出</h2>
+      <div class="grid-3 prompt-grid">
+        <div class="col prompt-col" data-anim>
+          <div class="meta">示例 1</div>
+          <div class="callout prompt-card">
+            <div class="meta">错误提示词</div>
+            <pre class="prompt-pre">你自己看着用中文英文都行。</pre>
+          </div>
+          <div class="callout prompt-card">
+            <div class="meta">正确提示词</div>
+            <pre class="prompt-pre correct">## 任务背景
+我要研究一个前沿技术主题，需要兼顾信息覆盖和中文可读性。
+
+## 检索语言
+请允许使用中文和英文资料进行检索、理解和推理。
+
+## 输出语言
+最终回答必须只用中文输出。
+
+## 术语规则
+首次出现专业术语时，请使用“英文原词（中文释义）”格式。
+
+## 输出结构
+请输出：
+1. 核心观点
+2. 关键证据
+3. 术语对照
+4. 适用边界
+
+## 禁止事项
+不要中英混写句子，不要直接堆英文资料翻译。</pre>
+          </div>
+        </div><div class="col prompt-col" data-anim>
+          <div class="meta">示例 2</div>
+          <div class="callout prompt-card">
+            <div class="meta">错误提示词</div>
+            <pre class="prompt-pre">翻译一下国外内容就好。</pre>
+          </div>
+          <div class="callout prompt-card">
+            <div class="meta">正确提示词</div>
+            <pre class="prompt-pre correct">## 任务背景
+我要参考国外资料形成一份中文行业分析，不需要逐句翻译。
+
+## 检索与推理
+请先综合中文和英文资料，提炼共同观点、差异观点和关键证据。
+
+## 输出语言
+最终只用中文结构化输出。
+
+## 术语规则
+关键术语请保留英文原词，并给出中文释义。
+
+## 输出要求
+请输出：
+1. 综合观点
+2. 证据来源类型
+3. 关键术语双语对照
+4. 对国内场景的适用边界
+
+## 禁止事项
+不要逐句直译，不要让英文夹杂影响阅读。</pre>
+          </div>
+        </div><div class="col prompt-col" data-anim>
+          <div class="meta">示例 3</div>
+          <div class="callout prompt-card">
+            <div class="meta">错误提示词</div>
+            <pre class="prompt-pre">尽量专业一点。</pre>
+          </div>
+          <div class="callout prompt-card">
+            <div class="meta">正确提示词</div>
+            <pre class="prompt-pre correct">## 任务背景
+我要写一份中文技术说明，需要专业但易读。
+
+## 检索语言
+可以参考英文资料和中文资料，但不要在最终输出中混杂语言。
+
+## 输出语言
+最终只用中文表达。
+
+## 术语规则
+对核心英文术语，请按以下格式处理：
+- 英文术语
+- 中文定义
+- 适用边界
+- 常见误解
+
+## 输出要求
+请先给术语对照表，再给中文说明正文。
+
+## 禁止事项
+不要用中英混写句制造专业感，也不要省略术语边界。</pre>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+<section class="slide light">
+  <div class="chrome"><div>Lesson 3 · Advanced Prompt Map</div><div>Map · 40 / 41</div></div>
+  <div class="frame" style="padding-top:4vh">
+    <div class="kicker" data-anim>本次课程技巧全景图</div>
+    <h2 class="h-xl" style="font-size:4.6vw" data-anim>技巧全景图</h2>
+    <p class="lead" style="font-size:1.5vw;margin-top:.8vh" data-anim>从信息完备，到过程控制，再到质量治理</p>
+    <figure class="tile" data-anim style="margin-top:4vh">
+      <div class="frame-img r-16x9 fit-contain" style="height:58vh;max-height:58vh;width:103vh;max-width:100%;margin-inline:auto;background:transparent">
+        <img src="images/3-1-skill-map.png?v=1" alt="本次课程技巧全景图">
+      </div>
+    </figure>
+  </div>
+  <div class="foot"><div>Advanced Prompt Map · Lesson 3</div><div>—</div></div>
+</section>
+
+<section class="slide hero light">
+  <div class="chrome"><div>Lesson 3 · 收束</div><div>End · 41 / 41</div></div>
+  <div class="frame" style="display:grid;gap:4vh;align-content:center;min-height:80vh">
+    <div class="kicker" data-anim>总结</div>
+    <h1 class="h-hero" style="font-size:7.4vw" data-anim>高级提示词是过程工程</h1>
+    <p class="lead" style="max-width:62vw" data-anim>从“会写一句”升级到“会设计流程”：先补全上下文，再控制过程，最后确保可验证与可追溯。</p>
+    <div class="meta-row" data-anim><span>高级构建</span><span>·</span><span>过程控制</span><span>·</span><span>质量治理</span></div>
+  </div>
+  <div class="foot"><div>行动建议：先把一个高频任务做成可复用模板</div><div>谢谢</div></div>
+</section></div>
+
+<div id="nav"></div>
+
+<script>
+/* =============== WebGL 双背景 ===============
+   深色页：Holographic Dispersion（全息色散 · 钛金暗流）—— 彩虹微扰、鼠标径向涟漪
+   浅色页：Spiral Vortex（旋转涡流 · 银色珍珠）—— domain-warp 流动、无中心
+   修改风格请参考 references/webgl-backgrounds.md
+*/
+const VS = `attribute vec2 position;void main(){gl_Position=vec4(position,0.0,1.0);}`;
+
+const FS_DARK = `precision highp float;
+uniform vec2 u_resolution;uniform float u_time;uniform vec2 u_mouse;
+vec3 palette(float t,vec3 a,vec3 b,vec3 c,vec3 d){return a+b*cos(6.28318*(c*t+d));}
+void main(){
+  vec2 uv=gl_FragCoord.xy/u_resolution.xy;
+  vec2 p=uv*2.0-1.0;p.x*=u_resolution.x/u_resolution.y;
+  vec2 m=u_mouse*2.0-1.0;m.x*=u_resolution.x/u_resolution.y;
+  float md=length(p-m);
+  float mr=sin(md*15.0-u_time*4.0)*exp(-md*3.0);p+=mr*0.08;
+  vec2 p0=p;
+  for(float i=1.0;i<4.0;i++){
+    p.x+=0.1/i*sin(i*3.0*p.y+u_time*0.4)+0.05;
+    p.y+=0.1/i*cos(i*2.0*p.x+u_time*0.3)-0.05;
+  }
+  float r=length(p);float ang=atan(p.y,p.x);
+  vec3 a=vec3(0.12,0.12,0.13);
+  vec3 b=vec3(0.03,0.04,0.05);
+  vec3 c=vec3(1.0,1.0,1.0);
+  vec3 d=vec3(0.1,0.2,0.4);
+  vec3 col=palette(r*1.5+p0.x*0.5+u_time*0.1,a,b,c,d);
+  float disp=sin(r*25.0-u_time*1.5+ang*2.0)*0.5+0.5;
+  col+=vec3(disp*0.015,disp*0.01,disp*0.02);
+  float hi=pow(sin(p.x*4.0+p.y*3.0+u_time)*0.5+0.5,8.0);
+  col+=hi*0.08;
+  vec3 base=vec3(0.05,0.05,0.06);
+  col=mix(base,col,0.85);
+  gl_FragColor=vec4(col,1.0);
+}`;
+
+const FS_LIGHT = `precision highp float;
+uniform vec2 u_resolution;uniform float u_time;uniform vec2 u_mouse;
+float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
+float noise(vec2 p){
+  vec2 i=floor(p),f=fract(p);
+  float a=hash(i),b=hash(i+vec2(1,0));
+  float c=hash(i+vec2(0,1)),d=hash(i+vec2(1,1));
+  vec2 u=f*f*(3.0-2.0*f);
+  return mix(a,b,u.x)+(c-a)*u.y*(1.0-u.x)+(d-b)*u.x*u.y;
+}
+float fbm(vec2 p){
+  float v=0.0,a=0.5;
+  mat2 m=mat2(0.80,0.60,-0.60,0.80);
+  for(int i=0;i<5;i++){v+=a*noise(p);p=m*p*2.02;a*=0.5;}
+  return v;
+}
+void main(){
+  vec2 uv=gl_FragCoord.xy/u_resolution.xy;
+  vec2 p=uv;p.x*=u_resolution.x/u_resolution.y;
+  vec2 m=u_mouse;m.x*=u_resolution.x/u_resolution.y;
+  vec2 md=p-m;float dl=length(md);
+  p+=normalize(md+vec2(0.0001))*exp(-dl*5.0)*0.03;
+  vec2 q=vec2(fbm(p*1.8+u_time*0.07),fbm(p*1.8+vec2(5.2,1.3)+u_time*0.06));
+  vec2 r=vec2(fbm(p*2.0+q*1.3+vec2(1.7,9.2)+u_time*0.05),
+              fbm(p*2.0+q*1.3+vec2(8.3,2.8)+u_time*0.04));
+  float f=fbm(p*2.2+r*1.5);
+  vec3 silverDark=vec3(0.86,0.85,0.84);
+  vec3 paper=vec3(0.955,0.945,0.925);
+  vec3 col=mix(silverDark,paper,f);
+  float ph=r.x*2.2+u_time*0.35;
+  col+=vec3(0.78,0.62,0.92)*sin(ph)*0.055;
+  col+=vec3(0.55,0.72,0.95)*sin(ph*0.8+2.0)*0.05;
+  float hl=smoothstep(0.48,0.92,f);
+  col+=hl*0.06;
+  gl_FragColor=vec4(col,1.0);
+}`;
+
+const mouse={x:0.5,y:0.5};
+addEventListener('mousemove',e=>{mouse.x=e.clientX/innerWidth;mouse.y=e.clientY/innerHeight});
+
+function bootGL(canvasId, fsSrc){
+  const canvas=document.getElementById(canvasId);
+  const gl=canvas.getContext('webgl',{alpha:false,antialias:true});
+  if(!gl) return ()=>false;
+  const mk=(t,s)=>{const sh=gl.createShader(t);gl.shaderSource(sh,s);gl.compileShader(sh);return sh};
+  const prog=gl.createProgram();
+  gl.attachShader(prog,mk(gl.VERTEX_SHADER,VS));
+  gl.attachShader(prog,mk(gl.FRAGMENT_SHADER,fsSrc));
+  gl.linkProgram(prog);gl.useProgram(prog);
+  const buf=gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER,buf);
+  gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,-1,1,-1,1,1,-1,1,1]),gl.STATIC_DRAW);
+  const pos=gl.getAttribLocation(prog,'position');
+  gl.enableVertexAttribArray(pos);gl.vertexAttribPointer(pos,2,gl.FLOAT,false,0,0);
+  const lRes=gl.getUniformLocation(prog,'u_resolution');
+  const lT=gl.getUniformLocation(prog,'u_time');
+  const lM=gl.getUniformLocation(prog,'u_mouse');
+  const resize=()=>{
+    const d=Math.min(window.devicePixelRatio||1,2);
+    canvas.width=innerWidth*d;canvas.height=innerHeight*d;
+    gl.viewport(0,0,canvas.width,canvas.height);
+  };
+  addEventListener('resize',resize);resize();
+  return (tSec)=>{
+    gl.uniform2f(lRes,canvas.width,canvas.height);
+    gl.uniform1f(lT,tSec);
+    gl.uniform2f(lM,mouse.x,1-mouse.y);
+    gl.drawArrays(gl.TRIANGLES,0,6);
+    return true;
+  };
+}
+const drawDark=bootGL('bg-dark',FS_DARK);
+const drawLight=bootGL('bg-light',FS_LIGHT);
+const t0=Date.now();
+(function loop(){
+  const t=(Date.now()-t0)/1000;
+  drawDark(t);drawLight(t);
+  requestAnimationFrame(loop);
+})();
+
+// =============== 导航（翻页 / 圆点 / 键盘 / 滚轮 / 触屏） ===============
+const deck=document.getElementById('deck');
+const slides=deck.querySelectorAll('.slide');
+const nav=document.getElementById('nav');
+const exportStableBtn=document.getElementById('export-stable');
+const preview=document.createElement('div');
+preview.id='image-preview';
+preview.innerHTML='<img alt="">';
+document.body.appendChild(preview);
+const previewImg=preview.querySelector('img');
+let previewOn=false;
+let previewImages=[];
+let previewIndex=0;
+let idx=0,total=slides.length,lock=false;
+
+function showPreviewAt(i){
+  if(!previewImages.length) return;
+  previewIndex=(i+previewImages.length)%previewImages.length;
+  const img=previewImages[previewIndex];
+  previewImg.src=img.currentSrc || img.src;
+  previewImg.alt=img.alt || '';
+}
+
+function showPrevInSlide(){
+  showPreviewAt(previewIndex-1);
+}
+
+function showNextInSlide(){
+  showPreviewAt(previewIndex+1);
+}
+
+function openImagePreviewByImage(img){
+  const slide=img.closest('.slide');
+  if(!slide) return;
+  previewImages=[...slide.querySelectorAll('img')];
+  if(!previewImages.length) return;
+  previewIndex=Math.max(0, previewImages.indexOf(img));
+  showPreviewAt(previewIndex);
+  preview.classList.add('open');
+  document.body.classList.add('image-preview-open');
+  previewOn=true;
+}
+
+function closeImagePreview(){
+  if(!previewOn) return;
+  preview.classList.remove('open');
+  document.body.classList.remove('image-preview-open');
+  previewImg.removeAttribute('src');
+  previewImg.alt='';
+  previewImages=[];
+  previewIndex=0;
+  previewOn=false;
+}
+
+// 关键：矫正 deck 宽度为 total * 100vw，否则翻页会错位
+deck.style.width=(total*100)+'vw';
+
+slides.forEach((s,i)=>{
+  const b=document.createElement('button');
+  b.className='dot';b.dataset.i=i;b.setAttribute('aria-label','Page '+(i+1));
+  b.onclick=()=>go(i);
+  nav.appendChild(b);
+});
+
+deck.querySelectorAll('img').forEach((img)=>{
+  img.addEventListener('click',(e)=>{
+    e.preventDefault();
+    e.stopPropagation();
+    openImagePreviewByImage(img);
+  });
+});
+
+preview.addEventListener('click',(e)=>{
+  if(e.target===preview){ closeImagePreview(); return; }
+  if(e.target===previewImg){
+    const rect=previewImg.getBoundingClientRect();
+    const mid=rect.left+rect.width/2;
+    if(e.clientX<mid) showPrevInSlide();
+    else showNextInSlide();
+  }
+});
+
+function go(n){
+  if(!total) return;
+  if(lock)return;
+  idx=Math.max(0,Math.min(total-1,n));
+  deck.style.transform=`translateX(${-idx*100}vw)`;
+  nav.querySelectorAll('.dot').forEach((d,i)=>d.classList.toggle('active',i===idx));
+  /* 主题切换：优先读 data-theme，其次从 class（light/dark）推断 */
+  const el=slides[idx];
+  const th=el.dataset.theme || (el.classList.contains('light')?'light':(el.classList.contains('dark')?'dark':'dark'));
+  document.body.classList.toggle('light-bg',th==='light');
+  /* 动效：翻页过渡中段触发当前页的入场动画（由 motion-boot 注册） */
+  if(window.__playSlide) setTimeout(()=>window.__playSlide(idx), 450);
+  lock=true;setTimeout(()=>lock=false,700);
+}
+
+/* =============== ESC 索引视图 =============== */
+let overviewOn=false;
+const ov=document.createElement('div');
+ov.id='overview';
+ov.style.cssText='position:fixed;inset:0;z-index:100;background:rgba(var(--ink-rgb),.92);backdrop-filter:blur(12px);display:none;overflow-y:auto;padding:4vh 4vw';
+document.body.appendChild(ov);
+
+function buildOverview(){
+  ov.innerHTML='';
+  const grid=document.createElement('div');
+  grid.style.cssText='display:grid;grid-template-columns:repeat(4,1fr);gap:2vh 1.6vw;max-width:90vw;margin:0 auto';
+  slides.forEach((s,i)=>{
+    const card=document.createElement('div');
+    card.style.cssText='cursor:pointer;border-radius:6px;overflow:hidden;border:2px solid '+(i===idx?'rgba(var(--paper-rgb),.8)':'rgba(var(--paper-rgb),.15)')+';transition:border-color .2s';
+    card.onmouseenter=()=>card.style.borderColor='rgba(var(--paper-rgb),.6)';
+    card.onmouseleave=()=>card.style.borderColor=i===idx?'rgba(var(--paper-rgb),.8)':'rgba(var(--paper-rgb),.15)';
+    const wrap=document.createElement('div');
+    wrap.style.cssText='width:100%;aspect-ratio:16/9;overflow:hidden;position:relative;pointer-events:none;background:'+(s.classList.contains('light')?'var(--paper)':'var(--ink)');
+    const clone=s.cloneNode(true);
+    clone.style.cssText='width:100vw;height:100vh;transform:scale('+(1/4.5)+');transform-origin:top left;position:absolute;top:0;left:0;pointer-events:none';
+    wrap.appendChild(clone);
+    const label=document.createElement('div');
+    label.style.cssText='padding:6px 10px;font-family:var(--mono);font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--paper);opacity:.7';
+    label.textContent=(i+1)+' / '+total;
+    card.appendChild(wrap);
+    card.appendChild(label);
+    card.onclick=()=>{toggleOverview();go(i)};
+    grid.appendChild(card);
+  });
+  ov.appendChild(grid);
+}
+
+function toggleOverview(){
+  overviewOn=!overviewOn;
+  if(overviewOn){buildOverview();ov.style.display='block';}
+  else{ov.style.display='none';}
+}
+
+addEventListener('keydown',e=>{
+  if(e.key==='Escape'){
+    e.preventDefault();
+    if(previewOn){ closeImagePreview(); return; }
+    toggleOverview();
+    return;
+  }
+  if(previewOn && e.key==='ArrowLeft'){ e.preventDefault(); showPrevInSlide(); return; }
+  if(previewOn && e.key==='ArrowRight'){ e.preventDefault(); showNextInSlide(); return; }
+  if(previewOn)return;
+  if(overviewOn)return;
+  if(e.key==='ArrowRight'||e.key===' '){
+    if(window.__pipeAdvance && window.__pipeAdvance()) return;
+    go(idx+1);
+    return;
+  }
+  if(e.key==='ArrowLeft')go(idx-1);
+  if(e.key==='Home')go(0);
+  if(e.key==='End')go(total-1);
+});
+
+let tx=0,ty=0;
+addEventListener('touchstart',e=>{tx=e.touches[0].clientX;ty=e.touches[0].clientY},{passive:true});
+addEventListener('touchend',e=>{
+  const dx=(e.changedTouches[0].clientX-tx);
+  const dy=(e.changedTouches[0].clientY-ty);
+  if(Math.abs(dx)>50&&Math.abs(dx)>Math.abs(dy)){
+    if(dx<0 && window.__pipeAdvance && window.__pipeAdvance()) return;
+    go(idx+(dx<0?1:-1));
+  }
+},{passive:true});
+
+if(total>0) go(0);
+
+function waitFrames(n=2){
+  return new Promise((resolve)=>{
+    const step=()=>{ if(n--<=0) return resolve(); requestAnimationFrame(step); };
+    step();
+  });
+}
+
+function applySlideState(n){
+  idx=Math.max(0,Math.min(total-1,n));
+  deck.style.transform=`translateX(${-idx*100}vw)`;
+  nav.querySelectorAll('.dot').forEach((d,i)=>d.classList.toggle('active',i===idx));
+  const el=slides[idx];
+  const th=el.dataset.theme || (el.classList.contains('light')?'light':(el.classList.contains('dark')?'dark':'dark'));
+  document.body.classList.toggle('light-bg',th==='light');
+}
+
+async function exportImagePdf(){
+  if(!exportStableBtn) return;
+  if(!window.html2canvas || !window.jspdf?.jsPDF){
+    alert('导出依赖加载失败，请刷新后重试。');
+    return;
+  }
+  if(!total){
+    alert('没有可导出的页面。');
+    return;
+  }
+
+  const prev = {
+    btnText: exportStableBtn.textContent
+  };
+
+  exportStableBtn.disabled=true;
+  exportStableBtn.dataset.exporting='1';
+  exportStableBtn.textContent='导出中...';
+  let exportHost = null;
+  try{
+    if(document.fonts?.ready) await document.fonts.ready;
+    await Promise.all([...document.images].map(async (img)=>{
+      if(!img.complete){
+        await new Promise((resolve)=>{
+          img.addEventListener('load', resolve, { once:true });
+          img.addEventListener('error', resolve, { once:true });
+        });
+      }
+      if(typeof img.decode==='function'){ try{ await img.decode(); }catch{} }
+    }));
+
+    exportHost = document.createElement('div');
+    exportHost.style.cssText='position:fixed;left:-200vw;top:0;width:100vw;height:100vh;overflow:hidden;pointer-events:none;z-index:-1;';
+    document.body.appendChild(exportHost);
+
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF({ orientation:'landscape', unit:'mm', format:[160,90], compress:true });
+    const scale = Math.min(window.devicePixelRatio || 1, 2);
+
+    for(let i=0;i<total;i++){
+      exportStableBtn.textContent=`正在导出第 ${i+1} 页，共 ${total} 页`;
+      const slideClone = slides[i].cloneNode(true);
+      slideClone.style.cssText='position:absolute;inset:0;width:100vw;height:100vh;transform:none!important;transition:none!important;';
+      slideClone.querySelectorAll('[data-anim]').forEach((el)=>{
+        el.style.opacity='1';
+        el.style.transform='none';
+      });
+      exportHost.innerHTML='';
+      exportHost.appendChild(slideClone);
+      await waitFrames(2);
+      const shot = await window.html2canvas(slideClone, {
+        backgroundColor: null,
+        useCORS: true,
+        allowTaint: false,
+        scale
+      });
+      const img = shot.toDataURL('image/png');
+      if(i>0) pdf.addPage([160,90], 'landscape');
+      pdf.addImage(img, 'PNG', 0, 0, 160, 90, undefined, 'FAST');
+    }
+
+    const firstSlide = slides[0];
+    const titleEl = firstSlide?.querySelector('h1, h2, h3');
+    const title = (titleEl?.textContent || '').trim();
+    const safeTitle = title.replace(/[\\/:*?"<>|]/g, ' ').replace(/\s+/g, ' ').trim();
+    const base = safeTitle || (location.pathname.split('/').pop() || 'slides').replace(/\.html?$/i, '');
+    pdf.save(`${base}.pdf`);
+  }catch(err){
+    alert(`图片 PDF 导出失败。\n可能原因：内存不足、跨域图片限制或浏览器兼容问题。\n\n${err?.message || err}`);
+  }finally{
+    if(exportHost) exportHost.remove();
+    delete exportStableBtn.dataset.exporting;
+    exportStableBtn.disabled=false;
+    exportStableBtn.textContent=prev.btnText;
+  }
+}
+
+if(exportStableBtn){
+  exportStableBtn.addEventListener('click', exportImagePdf);
+}
+
+</script>
+<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+<script>lucide.createIcons();</script>
+
+<!-- ============ Motion One 动效引擎（本地优先,CDN 兜底） ============
+     加载策略:先 ./assets/motion.min.js(本地,离线可用),失败 fallback 到 jsDelivr CDN
+     加载完成后挂 window.__playSlide / window.__pipeAdvance,
+     导航脚本会在翻页中段调用 __playSlide(idx),键盘/滚轮/触屏会在翻页前调用 __pipeAdvance()
+     双双失败时会兜底把所有 [data-anim] 设为可见,不让动效破坏阅读
+-->
+<script type="module">
+let motion;
+try {
+  motion = await import('./assets/motion.min.js');
+} catch(e1) {
+  try {
+    motion = await import('https://cdn.jsdelivr.net/npm/motion@11.11.17/+esm');
+  } catch(e2) {
+    console.warn('[motion] local + CDN both failed, disabling animations', e1, e2);
+    document.querySelectorAll('[data-anim]').forEach(el=>{el.style.opacity='1';el.style.transform='none'});
+    document.querySelectorAll('[data-animate="pipeline"] [data-anim]').forEach(el=>el.style.opacity='1');
+  }
+}
+
+if(motion){
+  const { animate, stagger } = motion;
+  document.body.classList.add('motion-ready');
+  const EASE = [.22, 1, .36, 1];
+  const slides = [...document.querySelectorAll('.slide')];
+  let pipeStep = -1;
+  let lastIdx = -1;
+
+  function resetAnims(slide){
+    slide.querySelectorAll('[data-anim]').forEach(el=>{
+      el.style.opacity='';
+      el.style.transform='';
+    });
+  }
+
+  function playSlide(i){
+    const slide = slides[i];
+    if(!slide) return;
+    lastIdx = i;
+    const recipe = slide.dataset.animate || (slide.classList.contains('hero') ? 'hero' : 'cascade');
+
+    if(recipe === 'pipeline'){
+      pipeStep = -1;
+      slide.querySelectorAll('[data-anim]').forEach(el=>{
+        el.style.opacity='0.15';
+        el.style.transform='none';
+      });
+      return;
+    }
+
+    resetAnims(slide);
+    const all = [...slide.querySelectorAll('[data-anim]')];
+    if(!all.length) return;
+
+    if(recipe === 'directional'){
+      const lefts  = all.filter(el=>el.dataset.anim==='left');
+      const divs   = all.filter(el=>el.dataset.anim==='divider');
+      const rights = all.filter(el=>el.dataset.anim==='right');
+      const others = all.filter(el=>!['left','right','divider'].includes(el.dataset.anim));
+      if(others.length) animate(others, {opacity:[0,1], y:[12,0]}, {duration:.6, delay:stagger(.1, {start:.15}), easing:EASE});
+      if(lefts.length)  animate(lefts,  {opacity:[0,1], x:[-24,0]}, {duration:.8, delay:.35, easing:EASE});
+      if(divs.length)   animate(divs,   {opacity:[0,.25]},          {duration:.5, delay:.9});
+      if(rights.length) animate(rights, {opacity:[0,1], x:[24,0]},  {duration:.8, delay:1.0, easing:EASE});
+      return;
+    }
+
+    if(recipe === 'quote'){
+      const lines = all.filter(el=>el.dataset.anim==='line');
+      const others = all.filter(el=>el.dataset.anim!=='line');
+      if(others.length) animate(others, {opacity:[0,1], y:[8,0]},    {duration:.6, delay:stagger(.12, {start:.2}), easing:EASE});
+      if(lines.length)  animate(lines,  {opacity:[.35,1], y:[10,0]}, {duration:.8, delay:stagger(.55, {start:.5}), easing:EASE});
+      return;
+    }
+
+    if(recipe === 'hero'){
+      animate(all, {opacity:[0,1], y:[14,0]}, {duration:.9, delay:stagger(.16, {start:.2}), easing:EASE});
+      return;
+    }
+
+    // default: cascade
+    animate(all, {opacity:[0,1], y:[16,0]}, {duration:.75, delay:stagger(.1, {start:.15}), easing:EASE});
+  }
+
+  function pipeAdvance(){
+    const slide = slides[lastIdx];
+    if(!slide || slide.dataset.animate !== 'pipeline') return false;
+    const steps  = [...slide.querySelectorAll('[data-anim="step"]')];
+    const arrows = [...slide.querySelectorAll('[data-anim="arrow"]')];
+    if(pipeStep >= steps.length - 1) return false;
+    pipeStep++;
+    animate(steps[pipeStep], {opacity:[0.15,1], y:[8,0]}, {duration:.5, easing:EASE});
+    if(pipeStep > 0 && arrows[pipeStep-1]){
+      animate(arrows[pipeStep-1], {opacity:[0.15,.7]}, {duration:.3, delay:.15});
+    }
+    return true;
+  }
+
+  window.__playSlide = playSlide;
+  window.__pipeAdvance = pipeAdvance;
+
+  // 首屏:go(0) 已跑过(同步),没来得及触发动效 → 这里补一下
+  playSlide(0);
+}
+</script>
+</body>
+</html>
