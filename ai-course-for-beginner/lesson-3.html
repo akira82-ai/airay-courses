@@ -2680,6 +2680,29 @@ function applySlideState(n){
   document.body.classList.toggle('light-bg',th==='light');
 }
 
+function normalizeExportColors(root){
+  const props=['color','backgroundColor','borderTopColor','borderRightColor','borderBottomColor','borderLeftColor','outlineColor','textDecorationColor','columnRuleColor','caretColor','fill','stroke'];
+  const ctx = normalizeExportColors.ctx || (normalizeExportColors.ctx=document.createElement('canvas').getContext('2d'));
+  const toRgb=(value)=>{
+    if(!value || !value.includes('oklch')) return value;
+    const prev=ctx.fillStyle;
+    ctx.fillStyle='#000';
+    ctx.fillStyle=value;
+    const next=ctx.fillStyle;
+    ctx.fillStyle=prev;
+    return next && !next.includes('oklch') ? next : '#000';
+  };
+  [root,...root.querySelectorAll('*')].forEach((el)=>{
+    const cs=getComputedStyle(el);
+    props.forEach((prop)=>{
+      const value=toRgb(cs[prop]);
+      if(value) el.style[prop]=value;
+    });
+    if(cs.boxShadow.includes('oklch')) el.style.boxShadow='none';
+    if(cs.textShadow.includes('oklch')) el.style.textShadow='none';
+  });
+}
+
 async function exportImagePdf(){
   if(!exportStableBtn) return;
   if(!window.html2canvas || !window.jspdf?.jsPDF){
@@ -2729,6 +2752,7 @@ async function exportImagePdf(){
       });
       exportHost.innerHTML='';
       exportHost.appendChild(slideClone);
+      normalizeExportColors(slideClone);
       await waitFrames(2);
       const shot = await window.html2canvas(slideClone, {
         backgroundColor: null,
